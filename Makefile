@@ -6,8 +6,9 @@ FILES=server.c Makefile README
 
 all: server
 
+default: server
 server: $(CLASSES)
-	$(CC) -o $@ $^ $(CPPFLAGS) $@.c
+	$(CC) -o $@ $^ $(CPPFLAGS) $@.cpp
 
 
 
