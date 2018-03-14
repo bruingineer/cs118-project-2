@@ -32,21 +32,12 @@ int RTO = 500; // retransmission timeout value
 #define FRAG 0x02;
 #define SYN 0x01;
 
-/*class packet_header {
-public:
-    unsigned short seq_num, ACK_num, data_length;
-    inline void set(int var) {
-                flags |= var;
-                return;
-    };
-    inline bool ack() {return flags & 0x08;}
-    inline bool fin() {return flags & 0x04;}
-    inline bool frag() {return flags & 0x02;}
-    inline bool syn() {return flags & 0x01;}
-
-private:
-    unsigned char flags = 0x00;  // ACK, FIN, FRAG, SYN
-};*/
+struct PacketHeader {
+    unsigned short seq_num;
+	unsigned short ack_num;
+	unsigned short length;
+    unsigned char flags;  // ACK, FIN, FRAG, SYN
+};
 
 
 int sockfd, portno;
@@ -63,11 +54,12 @@ void error(char *msg)
 }
 
 char in_buf[1024]; //Buffer for HTTP GET input
-char header[12]; //Buffer for HTTP response header
+char hdr_buf[8]; //Buffer for HTTP response header
 int recvlen;
 //Handles server input/output
 void respond(){
-	
+	struct PacketHeader header;
+	printf("%d\n",sizeof(header));
 	
 	memset(in_buf, 0, 1024);  // reset memory
 	
@@ -77,9 +69,16 @@ void respond(){
 		printf("received %d bytes\n", recvlen);
 		in_buf[recvlen] = 0;
 		printf("received message: %s\n", in_buf);
-		char* out_buf = "received message: ";
+		struct PacketHeader header;
+		header.seq_num = 2000;
+		header.ack_num = 2001;
+		header.length = 222;
+		header.flags = 3;
+		char* out_buf[1024];
+		memset(out_buf,0,1024);
+		memcpy(out_buf,(void*) &header,sizeof(header));
 		sendto(sockfd, out_buf, 1024, 0, (struct sockaddr*) &cli_addr, addrlen);
-		sendto(sockfd, in_buf, 1024, 0, (struct sockaddr*) &cli_addr, addrlen);
+		//sendto(sockfd, in_buf, 1024, 0, (struct sockaddr*) &cli_addr, addrlen);
 	}
 	
 	/*
