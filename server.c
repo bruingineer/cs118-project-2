@@ -51,11 +51,23 @@ void error(char *msg)
     exit(1);
 }
 
+int get_packet(char* in_buf, struct PacketHeader* header, char* data) {
+	int recvlen = recvfrom(sockfd, in_buf, 1024, 0, (struct sockaddr*) &cli_addr, &addrlen);
+	if(recvlen > 0){
+		in_buf[recvlen] = 0;
+		memcpy((void*) header,in_buf,sizeof(struct PacketHeader));
+		memcpy((void*) data, in_buf + sizeof(struct PacketHeader), header->length);
+		printf("Receiving packet %d\n", header->seq_num);
+		return 1;
+	}
+	return 0;
+}
+
 void send_packet(char* input, unsigned short seq, unsigned short acknum, 
 				 unsigned char ackflag, unsigned char finflag, unsigned char fragflag, unsigned char synflag, int retrans){
 	char buf[1024];
 	memset(buf, 0, 1024);
-	unsigned short datalen = sizeof(input);
+	unsigned short datalen = strlen(input);
 	struct PacketHeader header;
 	if(datalen > (1023 - sizeof(header))) error("Packet too large");
 	header.seq_num = seq;
@@ -64,7 +76,7 @@ void send_packet(char* input, unsigned short seq, unsigned short acknum,
 	header.flags = ACK*ackflag | FIN*finflag | FRAG*fragflag | SYN*synflag;
 	memcpy(buf,(void*) &header, sizeof(header));
 	memcpy(buf + sizeof(header), input, datalen);
-	if(sendto(sockfd,buf,strlen(buf),0, (struct sockaddr *)&cli_addr, addrlen) < 0)
+	if(sendto(sockfd,buf,sizeof(buf),0, (struct sockaddr *)&cli_addr,addrlen) < 0)
 		error("ERROR in sendto");
 	printf("Sending packet %d %d", seq, window_size);
 	if(synflag) printf(" SYN");
@@ -74,33 +86,17 @@ void send_packet(char* input, unsigned short seq, unsigned short acknum,
 }
 
 
-
-char in_buf[1024]; //Buffer for HTTP GET input
-char hdr_buf[8]; //Buffer for HTTP response header
-int recvlen;
 //Handles server input/output
+char in_buf[1024]; //Buffer for HTTP GET input
+struct PacketHeader header;
 void respond(){
-	struct PacketHeader header;
-	printf("%d\n",sizeof(header));
-	
 	memset(in_buf, 0, 1024);  // reset memory
-	
-	//printf("waiting on port %d\n", portno);
-	recvlen = recvfrom(sockfd, in_buf, 1024, 0, (struct sockaddr*) &cli_addr, &addrlen);
-	if(recvlen > 0){
-		printf("received %d bytes\n", recvlen);
-		in_buf[recvlen] = 0;
-		printf("received message: %s\n", in_buf);
-		struct PacketHeader header;
-		header.seq_num = 2000;
-		header.ack_num = 2001;
-		header.length = 222;
-		header.flags = 3;
-		char* out_buf[1024];
-		memset(out_buf,0,1024);
-		memcpy(out_buf,(void*) &header,sizeof(header));
-		sendto(sockfd, out_buf, 1024, 0, (struct sockaddr*) &cli_addr, addrlen);
-		//sendto(sockfd, in_buf, 1024, 0, (struct sockaddr*) &cli_addr, addrlen);
+	char payload[1024] = {0};
+	if(get_packet(in_buf, &header, payload)){
+		printf("%d %d %d\n", header.ack_num, header.length, header.flags);
+		printf("received message: %d \n%s\n", strlen(payload), payload);
+		char* buf = "Server Acknowledged";
+		send_packet(buf, 2002, 366, 0, 1, 0, 1, 0);
 	}
 	
 	/*
@@ -118,15 +114,6 @@ void respond(){
     
     //Extract file name, get its file descriptor, and modify content_type, content_length and content_response_code
     int fd = parse_file_req(in_buffer);
-   
-    //Construct TCP header incrementally
-    strcat(header,"HTTP/1.1 ");
-    strcat(header,content_response_code);
-    strcat(header,"\r\nContent-Type: ");
-    strcat(header,content_type);
-    strcat(header,"\r\nContent-Length: ");
-    sprintf(header + strlen(header),"%d", (int) content_length);//sprintf here needed for integer
-    strcat(header,"\r\nConnection: Keep-Alive\r\n\r\n");
    
     write(newsockfd, header, strlen(header));//Write header
 
