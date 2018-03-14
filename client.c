@@ -18,10 +18,11 @@
 #define MAX_SEQ_NUM 30720; // 30720 bytes, reset to 1 after it reaches 30Kbytes
 int window_size = 5120; // bytes, default value
 int RTO = 500; // retransmission timeout value
-#define ACK 0x08;
-#define FIN 0x04;
-#define FRAG 0x02;
-#define SYN 0x01;
+
+#define ACK 0x08
+#define FIN 0x04
+#define FRAG 0x02
+#define SYN 0x01
 
 struct PacketHeader {
     unsigned short seq_num;
@@ -40,6 +41,12 @@ void error(char *msg)
 {
     perror(msg);
     exit(1);
+}
+
+char* parse_packet(char* in_buf, (struct PacketHeader*) header, char* data) {
+	memcpy((void*) &header,in_buf,sizeof(header));
+	char payload[1024];
+	memcpy((void*) &payload, in_buf[sizeof(header)], header.length);
 }
 
 int main(int argc, char *argv[])
@@ -89,21 +96,33 @@ int main(int argc, char *argv[])
 	char in_buf[1024]; //Buffer for HTTP GET input
 	char hdr_buf[8]; //Buffer for HTTP response header
 	int recvlen;
+	int rcv_data = creat("receive.data", O_WRONLY);
+
 	while(1){
-	memset(in_buf, 0, 1024);  // reset memory
-	
-	//printf("waiting on port %d\n", portno);
-	recvlen = recvfrom(sockfd, in_buf, 1024, 0, (struct sockaddr*) &serv_addr, &serverlen);
-		if(recvlen > 0){
-			printf("received %d bytes\n", recvlen);
-			//in_buf[recvlen] = 0;
-			//printf("received message: %s\n", in_buf);
-			struct PacketHeader header;
-			memcpy((void*) &header,in_buf,sizeof(header));
-			printf("%d %d %d\n",header.seq_num,header.ack_num,header.length);
-			
-		}
-    //close(sockfd);
+		memset(in_buf, 0, 1024);  // reset memory
+		
+		//printf("waiting on port %d\n", portno);
+		recvlen = recvfrom(sockfd, in_buf, 1024, 0, (struct sockaddr*) &serv_addr, &serverlen);
+			if(recvlen > 0){
+				printf("received %d bytes\n", recvlen);
+				//in_buf[recvlen] = 0;
+				//printf("received message: %s\n", in_buf);
+				struct PacketHeader header;
+				char payload[1024] = {0};
+				parse_packet(in_buf, struct PacketHeader &header, payload);
+
+
+				printf("%d %d %d\n",header.seq_num,header.ack_num,header.length);
+				
+			}
+	    //close(sockfd);
 	}
     return 0;
+}
+
+
+
+(.... f1, f2, f3, f4) {
+
+	flags = f1|f2|f3|f4;
 }
