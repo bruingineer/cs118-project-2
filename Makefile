@@ -1,19 +1,19 @@
-CC=g++
-CPPFLAGS=-lsocket -lnsl -g -Wall
+CC=gcc
+CFLAGS=-g -Wall
 USERID=004454718
 CLASSES=
 FILES=server.c Makefile README
 
-all: server
 
-default: server
+all: clean server client
+
 server: $(CLASSES)
-	$(CC) -o $@ $^ $(CPPFLAGS) $@.cpp
-
-
+	$(CC) -o $@ $^ $(CFLAGS) $@.c
+client: $(CLASSES)
+	$(CC) -o $@ $^ $(CFLAGS) $@.c
 
 clean:
-	rm -rf *.o *~ *.gch *.swp *.dSYM server  *.tar.gz
+	rm -rf *.o *~ *.gch *.swp *.dSYM server  *.tar.gz ./server ./client
 
 dist: tarball
 

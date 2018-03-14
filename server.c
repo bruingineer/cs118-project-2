@@ -23,14 +23,37 @@
 #include <sys/stat.h>
 #include <signal.h>  /* signal name macros, and the kill() prototype */
 
+#define MAX_PACKET_LENGTH 1024; // 1024 bytes, inluding all headers
+#define MAX_SEQ_NUM 30720; // 30720 bytes, reset to 1 after it reaches 30Kbytes
+int window_size = 5120; // bytes, default value
+int RTO = 500; // retransmission timeout value
+#define ACK 0x08;
+#define FIN 0x04;
+#define FRAG 0x02;
+#define SYN 0x01;
+
+/*class packet_header {
+public:
+    unsigned short seq_num, ACK_num, data_length;
+    inline void set(int var) {
+                flags |= var;
+                return;
+    };
+    inline bool ack() {return flags & 0x08;}
+    inline bool fin() {return flags & 0x04;}
+    inline bool frag() {return flags & 0x02;}
+    inline bool syn() {return flags & 0x01;}
+
+private:
+    unsigned char flags = 0x00;  // ACK, FIN, FRAG, SYN
+};*/
+
+
 int sockfd, portno;
 struct sockaddr_in serv_addr, cli_addr;
 socklen_t addrlen = sizeof(cli_addr);
 
-//The following are HTTP Response fields. They need to be global to work across parse_file_req() and response()
-char* content_type;
-char* content_response_code;
-size_t content_length;
+
 
 //Simple error handling function. Prints a message and exits when called.
 void error(char *msg)
@@ -39,21 +62,24 @@ void error(char *msg)
     exit(1);
 }
 
-char in_buffer[1024]; //Buffer for HTTP GET input
+char in_buf[1024]; //Buffer for HTTP GET input
 char header[12]; //Buffer for HTTP response header
 int recvlen;
 //Handles server input/output
 void respond(){
 	
 	
-	memset(in_buffer, 0, 1024);  // reset memory
+	memset(in_buf, 0, 1024);  // reset memory
 	
 	//printf("waiting on port %d\n", portno);
-	recvlen = recvfrom(sockfd, in_buffer, 1024, 0, (struct sockaddr*) &cli_addr, &addrlen);
+	recvlen = recvfrom(sockfd, in_buf, 1024, 0, (struct sockaddr*) &cli_addr, &addrlen);
 	if(recvlen > 0){
 		printf("received %d bytes\n", recvlen);
-		in_buffer[recvlen] = 0;
-		printf("received message: %s\n", in_buffer);
+		in_buf[recvlen] = 0;
+		printf("received message: %s\n", in_buf);
+		char* out_buf = "received message: ";
+		sendto(sockfd, out_buf, 1024, 0, (struct sockaddr*) &cli_addr, addrlen);
+		sendto(sockfd, in_buf, 1024, 0, (struct sockaddr*) &cli_addr, addrlen);
 	}
 	
 	/*
