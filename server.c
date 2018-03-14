@@ -27,10 +27,10 @@
 #define MAX_SEQ_NUM 30720; // 30720 bytes, reset to 1 after it reaches 30Kbytes
 int window_size = 5120; // bytes, default value
 int RTO = 500; // retransmission timeout value
-#define ACK 0x08;
-#define FIN 0x04;
-#define FRAG 0x02;
-#define SYN 0x01;
+#define ACK 0x08
+#define FIN 0x04
+#define FRAG 0x02
+#define SYN 0x01
 
 struct PacketHeader {
     unsigned short seq_num;
@@ -44,14 +44,36 @@ int sockfd, portno;
 struct sockaddr_in serv_addr, cli_addr;
 socklen_t addrlen = sizeof(cli_addr);
 
-
-
 //Simple error handling function. Prints a message and exits when called.
 void error(char *msg)
 {
     perror(msg);
     exit(1);
 }
+
+void send_packet(char* input, unsigned short seq, unsigned short acknum, 
+				 unsigned char ackflag, unsigned char finflag, unsigned char fragflag, unsigned char synflag, int retrans){
+	char buf[1024];
+	memset(buf, 0, 1024);
+	unsigned short datalen = sizeof(input);
+	struct PacketHeader header;
+	if(datalen > (1023 - sizeof(header))) error("Packet too large");
+	header.seq_num = seq;
+	header.ack_num = acknum;
+	header.length = datalen;
+	header.flags = ACK*ackflag | FIN*finflag | FRAG*fragflag | SYN*synflag;
+	memcpy(buf,(void*) &header, sizeof(header));
+	memcpy(buf + sizeof(header), input, datalen);
+	if(sendto(sockfd,buf,strlen(buf),0, (struct sockaddr *)&cli_addr, addrlen) < 0)
+		error("ERROR in sendto");
+	printf("Sending packet %d %d", seq, window_size);
+	if(synflag) printf(" SYN");
+	else if(finflag) printf(" FIN");
+	if(retrans) printf(" Retransmission");
+	printf("\n");
+}
+
+
 
 char in_buf[1024]; //Buffer for HTTP GET input
 char hdr_buf[8]; //Buffer for HTTP response header
@@ -137,7 +159,7 @@ int main(int argc, char *argv[])
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(portno);
 
-    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
+    if (bind(sockfd, (struct sockaddr *) &serv_addr, addrlen) < 0)
         error("ERROR on binding");
 
     while(1){

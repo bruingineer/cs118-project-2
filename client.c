@@ -18,10 +18,10 @@
 #define MAX_SEQ_NUM 30720; // 30720 bytes, reset to 1 after it reaches 30Kbytes
 int window_size = 5120; // bytes, default value
 int RTO = 500; // retransmission timeout value
-#define ACK 0x08;
-#define FIN 0x04;
-#define FRAG 0x02;
-#define SYN 0x01;
+#define ACK 0x08
+#define FIN 0x04
+#define FRAG 0x02
+#define SYN 0x01
 
 struct PacketHeader {
     unsigned short seq_num;
@@ -34,6 +34,7 @@ int sockfd, portno;
 char* hostname;
 struct sockaddr_in serv_addr, cli_addr;
 struct hostent *server;
+socklen_t addrlen = sizeof(serv_addr);
 
 //Simple error handling function. Prints a message and exits when called.
 void error(char *msg)
@@ -41,6 +42,30 @@ void error(char *msg)
     perror(msg);
     exit(1);
 }
+
+void send_packet(char* input, unsigned short seq, unsigned short acknum, 
+				 unsigned char ackflag, unsigned char finflag, unsigned char fragflag, unsigned char synflag, int retrans){
+	char buf[1024];
+	memset(buf, 0, 1024);
+	unsigned short datalen = sizeof(input);
+	struct PacketHeader header;
+	if(datalen > (1023 - sizeof(header))) error("Packet too large");
+	header.seq_num = seq;
+	header.ack_num = acknum;
+	header.length = datalen;
+	header.flags = ACK*ackflag | FIN*finflag | FRAG*fragflag | SYN*synflag;
+	memcpy(buf,(void*) &header, sizeof(header));
+	memcpy(buf + sizeof(header), input, datalen);
+	if(sendto(sockfd,buf,strlen(buf),0, (struct sockaddr *)&serv_addr,addrlen) < 0)
+		error("ERROR in sendto");
+	printf("Sending packet %d %d", seq, window_size);
+	if(synflag) printf(" SYN");
+	else if(finflag) printf(" FIN");
+	if(retrans) printf(" Retransmission");
+	printf("\n");
+}
+
+
 
 int main(int argc, char *argv[])
 {//Socket connection as provided by sample code
@@ -81,8 +106,8 @@ int main(int argc, char *argv[])
 	fgets(buf, 1024, stdin);*/
 	char* buf = "test sending";
 	
-	socklen_t serverlen = sizeof(serv_addr);
-	if(sendto(sockfd,buf,strlen(buf),0, (struct sockaddr *)&serv_addr,serverlen) < 0)
+	
+	if(sendto(sockfd,buf,strlen(buf),0, (struct sockaddr *)&serv_addr,addrlen) < 0)
 		error("ERROR in sendto");
 	printf("send \"%s\" to %d\n",buf,portno);
 	
@@ -93,7 +118,7 @@ int main(int argc, char *argv[])
 	memset(in_buf, 0, 1024);  // reset memory
 	
 	//printf("waiting on port %d\n", portno);
-	recvlen = recvfrom(sockfd, in_buf, 1024, 0, (struct sockaddr*) &serv_addr, &serverlen);
+	recvlen = recvfrom(sockfd, in_buf, 1024, 0, (struct sockaddr*) &serv_addr, &addrlen);
 		if(recvlen > 0){
 			printf("received %d bytes\n", recvlen);
 			//in_buf[recvlen] = 0;
