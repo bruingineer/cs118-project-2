@@ -35,6 +35,7 @@ int sockfd, portno;
 char* hostname;
 struct sockaddr_in serv_addr, cli_addr;
 struct hostent *server;
+socklen_t addrlen = sizeof(serv_addr);
 
 //Simple error handling function. Prints a message and exits when called.
 void error(char *msg)
@@ -47,6 +48,28 @@ char* parse_packet(char* in_buf, (struct PacketHeader*) header, char* data) {
 	memcpy((void*) &header,in_buf,sizeof(header));
 	char payload[1024];
 	memcpy((void*) &payload, in_buf[sizeof(header)], header.length);
+}
+
+void send_packet(char* input, unsigned short seq, unsigned short acknum, 
+				 unsigned char ackflag, unsigned char finflag, unsigned char fragflag, unsigned char synflag, int retrans){
+	char buf[1024];
+	memset(buf, 0, 1024);
+	unsigned short datalen = sizeof(input);
+	struct PacketHeader header;
+	if(datalen > (1023 - sizeof(header))) error("Packet too large");
+	header.seq_num = seq;
+	header.ack_num = acknum;
+	header.length = datalen;
+	header.flags = ACK*ackflag | FIN*finflag | FRAG*fragflag | SYN*synflag;
+	memcpy(buf,(void*) &header, sizeof(header));
+	memcpy(buf + sizeof(header), input, datalen);
+	if(sendto(sockfd,buf,strlen(buf),0, (struct sockaddr *)&serv_addr,addrlen) < 0)
+		error("ERROR in sendto");
+	printf("Sending packet %d %d", seq, window_size);
+	if(synflag) printf(" SYN");
+	else if(finflag) printf(" FIN");
+	if(retrans) printf(" Retransmission");
+	printf("\n");
 }
 
 int main(int argc, char *argv[])
@@ -88,8 +111,8 @@ int main(int argc, char *argv[])
 	fgets(buf, 1024, stdin);*/
 	char* buf = "test sending";
 	
-	socklen_t serverlen = sizeof(serv_addr);
-	if(sendto(sockfd,buf,strlen(buf),0, (struct sockaddr *)&serv_addr,serverlen) < 0)
+	
+	if(sendto(sockfd,buf,strlen(buf),0, (struct sockaddr *)&serv_addr,addrlen) < 0)
 		error("ERROR in sendto");
 	printf("send \"%s\" to %d\n",buf,portno);
 	
@@ -99,10 +122,11 @@ int main(int argc, char *argv[])
 	int rcv_data = creat("receive.data", O_WRONLY);
 
 	while(1){
+
 		memset(in_buf, 0, 1024);  // reset memory
 		
 		//printf("waiting on port %d\n", portno);
-		recvlen = recvfrom(sockfd, in_buf, 1024, 0, (struct sockaddr*) &serv_addr, &serverlen);
+		recvlen = recvfrom(sockfd, in_buf, 1024, 0, (struct sockaddr*) &serv_addr, &addrlen);
 			if(recvlen > 0){
 				printf("received %d bytes\n", recvlen);
 				//in_buf[recvlen] = 0;
@@ -116,13 +140,7 @@ int main(int argc, char *argv[])
 				
 			}
 	    //close(sockfd);
+
 	}
     return 0;
-}
-
-
-
-(.... f1, f2, f3, f4) {
-
-	flags = f1|f2|f3|f4;
 }
