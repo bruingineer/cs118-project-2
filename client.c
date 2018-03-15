@@ -12,15 +12,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <poll.h>
+#include <sys/time.h>
 #include <signal.h>  /* signal name macros, and the kill() prototype */
 
 #define MAX_PACKET_LENGTH 1024 // 1024 bytes, inluding all headers
 #define MAX_PAYLOAD_LENGTH 1015 // 1024 - 8 - 1
 #define HEADER_LENGTH 8
 #define MAX_SEQ_NUM 30720 // 30720 bytes, reset to 1 after it reaches 30Kbytes
-int window_size = 5120; // bytes, default value
-int RTO = 500; // retransmission timeout value
-
+#define WINDOW_SIZE_BYTES 5120 // bytes, default value
+#define WINDOW_SIZE_PACKETS 5
+#define RTO 500 // retransmission timeout value
 #define ACK 0x08
 #define FIN 0x04
 #define FRAG 0x02
@@ -38,21 +40,34 @@ char* hostname;
 struct sockaddr_in serv_addr, cli_addr;
 struct hostent *server;
 socklen_t addrlen;
+int server_seq = 512;
+int rcv_data; // fd receive file
 
-struct PacketHeader {
-    unsigned short seq_num;
-	unsigned short ack_num;
-	unsigned short length;
-    unsigned char flags;  // ACK, FIN, FRAG, SYN
+struct Packet {
+    unsigned short seq_num = 0;
+	unsigned short ack_num = 0;
+	unsigned short length = 0;
+    unsigned char flags = 0;  // ACK, FIN, FRAG, SYN
+    char payload[MAX_PAYLOAD_LENGTH] = {0};
 };
 
+struct WindowFrame {
+	struct Packet packet;
+	int sent = 0;
+	int ack = 0;
+	int timeout = 0;
+	struct timeval timesent_tv;
+}
+
+/*
 struct AwaitACK {
 	char buf[MAX_PACKET_LENGTH];
 	struct PacketHeader header;
 	int timeout;
 };
+*/
 
-
+/* OLD GET PACKET
 int get_packet(char* in_buf, struct PacketHeader* header, char* data) {
 	int recvlen = recvfrom(sockfd, in_buf, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &serv_addr, &addrlen);
 	if(recvlen > 0){
@@ -63,14 +78,32 @@ int get_packet(char* in_buf, struct PacketHeader* header, char* data) {
 	}
 	return 0;
 }
+*/
+
+int get_packet(char* in_buf, struct Packet* rcv_packet) {
+	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &cli_addr, &cli_addrlen);
+	if(recvlen > 0){
+		// memcpy((void*) header,in_buf,HEADER_LENGTH);
+		// memcpy((void*) data, in_buf + HEADER_LENGTH, header->length);
+		// memcpy((void*) rcv_packet, )
+		printf("Receiving packet %d\n", rcv_packet->seq_num);
+		printf("payload: %s\n", rcv_packet->payload);
+		
+		return 1;
+	}
+	return 0;
+}
 
 //Add pointer to AwaitACK field if an ACK is expected. Else, input NULL.
 void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq, unsigned short acknum, 
 				 unsigned char ackflag, unsigned char finflag, unsigned char fragflag, unsigned char synflag){
-	char buf[MAX_PACKET_LENGTH];
-	memset(buf, 0, MAX_PACKET_LENGTH);
+	
+	char buf[MAX_PACKET_LENGTH] = {0};
+	//memset(buf, 0, MAX_PACKET_LENGTH);
 	unsigned short datalen = strlen(input);
+	/*
 	struct PacketHeader header;
+
 	if(datalen > (MAX_PAYLOAD_LENGTH)) error("Packet too large");
 	header.seq_num = seq;
 	header.ack_num = acknum;
@@ -78,15 +111,24 @@ void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq,
 	header.flags = ACK*ackflag | FIN*finflag | FRAG*fragflag | SYN*synflag;
 	memcpy(buf,(void*) &header, HEADER_LENGTH);
 	memcpy(buf + HEADER_LENGTH, input, datalen);
-	
-	printf("Sending packet %d %d", seq, window_size);
+	*/
+	struct Packet tr_packet = {
+		.seq_num = seq,
+		.ack_num = acknum,
+		.length = datalen,
+		.flags = ACK*ackflag | FIN*finflag | FRAG*fragflag | SYN*synflag
+	}
+	memcpy(tr_packet.payload, input, datalen);
+
+	printf("Sending packet %d %d", seq, WINDOW_SIZE_BYTES);
 	if(synflag) printf(" SYN");
 	else if(finflag) printf(" FIN");
 	printf("\n");
 	
-	if(sendto(sockfd,buf, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
+	if(sendto(sockfd,tr_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
 		error("ERROR in sendto");
-	
+	server_seq = server_seq+MAX_PACKET_LENGTH;
+/*
 	if(await_packet != NULL){
 		memset(await_packet->buf, 0, MAX_PACKET_LENGTH);
 		memcpy(await_packet->buf, buf, HEADER_LENGTH + datalen);
@@ -94,15 +136,18 @@ void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq,
 		memcpy((void*) &await_packet->header, (void*) &header, HEADER_LENGTH);
 		await_packet->timeout = 1;
 	}
+*/
+
 }
 
+/***
 void retransmit(struct AwaitACK* await_packet){
 	char buf[MAX_PACKET_LENGTH];
 	memset(buf, 0, MAX_PACKET_LENGTH);
 	memcpy(buf,(void*) &await_packet->header, HEADER_LENGTH);
 	memcpy(buf + HEADER_LENGTH, await_packet->buf, await_packet->header.length);
 	
-	printf("Sending packet %d %d", await_packet->header.seq_num, window_size);
+	printf("Sending packet %d %d", await_packet->header.seq_num, WINDOW_SIZE_BYTES);
 	if(SYN & await_packet->header.flags) printf(" SYN");
 	else if(FIN & await_packet->header.flags) printf(" FIN");
 	printf(" Retransmission\n");
@@ -110,19 +155,37 @@ void retransmit(struct AwaitACK* await_packet){
 	if(sendto(sockfd,buf, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
 	error("ERROR in sendto");
 }
+***/
 
 //Primary event loop
-char in_buf[1024]; //Buffer for HTTP GET input
-int rcv_data;
-struct PacketHeader header;
+char in_buf[MAX_PACKET_LENGTH]; //Buffer for HTTP GET input
+struct Packet rcv_packet;
 void respond(){
-	memset(in_buf, 0, 1024);  // reset memory
-	char payload[1024] = {0};
-	if(get_packet(in_buf, &header, payload)){
-		//printf("%d %d %d\n", header.ack_num, header.length, header.flags);
-		//printf("received message: %d \n%s\n", strlen(payload), payload);
-		exit(0);
+	memset(in_buf, 0, MAX_PACKET_LENGTH);  // reset memory
+	char payload[MAX_PACKET_LENGTH] = {0};
+	get_packet(in_buf, &rcv_packet);
+
+	if (header.flags & SYN) {
+		char* synbuf = "syn ack"
+		// only send syn ack then break
+		send_packet(NULL, synbuf, server_seq, header.seq_num, 1,0,0,1);
+	} else {
+		if (header.flags & FIN) {
+
+		}
+		if (header.flags & FRAG) {
+
+		}
+		if (header.flags & ACK) {
+		
+		}
 	}
+
+	// printf("%d %d %d\n", header.ack_num, header.length, header.flags);
+	// printf("received message: %d \n%s\n", strlen(payload), payload);
+	// char* buf = "Server Acknowledged";
+	// send_packet(NULL, buf, 2002, 366, 0, 1, 0, 1);
+
 }
 
 int main(int argc, char *argv[])
@@ -166,10 +229,7 @@ int main(int argc, char *argv[])
 	char* buf = "test sending 1234567890-sdfghjkrefc";
 	
 	send_packet(NULL, buf, 365, 2001, 1, 0, 1, 0);
-	printf("send \"%s\" to %d\n",buf,portno);
 	
-
-
 	while(1){
 		respond();
 	}
