@@ -238,7 +238,8 @@ int main(int argc, char *argv[])
 	char* buf = "testfile.txt";
 	
 	send_packet(NULL, buf, global_seq, 0, 0, 0, 0, 1);
-	
+	global_seq = global_seq+MAX_PACKET_LENGTH;
+
 	while(1){
 		respond();
 	}

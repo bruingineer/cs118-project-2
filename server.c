@@ -86,7 +86,7 @@ int get_packet(char* in_buf, struct Packet* rcv_packet) {
 		char* synbuf = " SYN";
 		char* empty = "";
 		char* str = empty;
-		if (rcv_packet.flags & SYN)
+		if (rcv_packet->flags & SYN)
 			str = synbuf;
 
 		printf("Receiving packet %d%s\n", rcv_packet->seq_num,str);
@@ -172,7 +172,7 @@ void respond(){
 		if (rcv_packet.flags & ACK) {
 		} else {
 			strncpy(filename, rcv_packet.payload, 256);
-			if (fd = open(filename, 0_RDONLY) < 0)
+			if ((fd = open(filename, O_RDONLY)) < 0)
 				finish = 1;
 		
 			char* syn_buf = "syn";
