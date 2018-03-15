@@ -40,32 +40,32 @@ char* hostname;
 struct sockaddr_in serv_addr, cli_addr;
 struct hostent *server;
 socklen_t addrlen;
-int server_seq = 512;
+int client_seq = 512;
 int rcv_data; // fd receive file
 
 struct Packet {
-    unsigned short seq_num = 0;
-	unsigned short ack_num = 0;
-	unsigned short length = 0;
-    unsigned char flags = 0;  // ACK, FIN, FRAG, SYN
-    char payload[MAX_PAYLOAD_LENGTH] = {0};
+    unsigned short seq_num;
+	unsigned short ack_num;
+	unsigned short length;
+    unsigned char flags;  // ACK, FIN, FRAG, SYN
+    char payload[MAX_PAYLOAD_LENGTH];
 };
 
 struct WindowFrame {
 	struct Packet packet;
-	int sent = 0;
-	int ack = 0;
-	int timeout = 0;
+	int sent;
+	int ack;
+	int timeout;
 	struct timeval timesent_tv;
-}
+};
 
-/*
+
 struct AwaitACK {
 	char buf[MAX_PACKET_LENGTH];
-	struct PacketHeader header;
+	//struct PacketHeader header;
 	int timeout;
 };
-*/
+
 
 /* OLD GET PACKET
 int get_packet(char* in_buf, struct PacketHeader* header, char* data) {
@@ -81,13 +81,13 @@ int get_packet(char* in_buf, struct PacketHeader* header, char* data) {
 */
 
 int get_packet(char* in_buf, struct Packet* rcv_packet) {
-	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &cli_addr, &cli_addrlen);
+	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &serv_addr, &addrlen);
 	if(recvlen > 0){
 		// memcpy((void*) header,in_buf,HEADER_LENGTH);
 		// memcpy((void*) data, in_buf + HEADER_LENGTH, header->length);
 		// memcpy((void*) rcv_packet, )
 		printf("Receiving packet %d\n", rcv_packet->seq_num);
-		printf("payload: %s\n", rcv_packet->payload);
+		//printf("payload: %s\n", rcv_packet->payload);
 		
 		return 1;
 	}
@@ -117,7 +117,7 @@ void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq,
 		.ack_num = acknum,
 		.length = datalen,
 		.flags = ACK*ackflag | FIN*finflag | FRAG*fragflag | SYN*synflag
-	}
+	};
 	memcpy(tr_packet.payload, input, datalen);
 
 	printf("Sending packet %d %d", seq, WINDOW_SIZE_BYTES);
@@ -125,9 +125,9 @@ void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq,
 	else if(finflag) printf(" FIN");
 	printf("\n");
 	
-	if(sendto(sockfd,tr_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
+	if(sendto(sockfd, &tr_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
 		error("ERROR in sendto");
-	server_seq = server_seq+MAX_PACKET_LENGTH;
+	client_seq = client_seq+MAX_PACKET_LENGTH;
 /*
 	if(await_packet != NULL){
 		memset(await_packet->buf, 0, MAX_PACKET_LENGTH);
@@ -166,9 +166,9 @@ void respond(){
 	get_packet(in_buf, &rcv_packet);
 
 	if (rcv_packet.flags & SYN) {
-		char* synbuf = "syn ack"
+		char* synbuf = "syn ack";
 		// only send syn ack then break
-		send_packet(NULL, synbuf, server_seq, rcv_packet.seq_num, 1,0,0,1);
+		send_packet(NULL, synbuf, client_seq, rcv_packet.seq_num, 1,0,0,0);
 	} else {
 		if (rcv_packet.flags & FIN) {
 
@@ -226,9 +226,9 @@ int main(int argc, char *argv[])
     char buf[1024];
 	printf("Enter msg");
 	fgets(buf, 1024, stdin);*/
-	char* buf = "test sending 1234567890-sdfghjkrefc";
+	char* buf = "testfile.txt";
 	
-	send_packet(NULL, buf, 365, 2001, 1, 0, 1, 0);
+	send_packet(NULL, buf, client_seq, 0, 0, 0, 0, 1);
 	
 	while(1){
 		respond();

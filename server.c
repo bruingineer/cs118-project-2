@@ -64,15 +64,15 @@ struct WindowFrame {
 	int ack;
 	int timeout;
 	struct timeval timesent_tv;
-}
+};
 
-/*
+
 struct AwaitACK {
 	char buf[MAX_PACKET_LENGTH];
-	struct PacketHeader header;
+	//struct PacketHeader header;
 	int timeout;
 };
-*/
+
 
 int get_packet(char* in_buf, struct Packet* rcv_packet) {
 	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &cli_addr, &cli_addrlen);
@@ -81,7 +81,7 @@ int get_packet(char* in_buf, struct Packet* rcv_packet) {
 		// memcpy((void*) data, in_buf + HEADER_LENGTH, header->length);
 		// memcpy((void*) rcv_packet, )
 		printf("Receiving packet %d\n", rcv_packet->seq_num);
-		printf("payload: %s\n", rcv_packet->payload);
+		//printf("payload: %s\n", rcv_packet->payload);
 		
 		return 1;
 	}
@@ -101,7 +101,7 @@ void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq,
 		.ack_num = acknum,
 		.length = datalen,
 		.flags = ACK*ackflag | FIN*finflag | FRAG*fragflag | SYN*synflag
-	}
+	};
 	memcpy(tr_packet.payload, input, datalen);
 	// memcpy(buf,(void*) &header, HEADER_LENGTH);
 	// memcpy(buf + HEADER_LENGTH, input, datalen);
@@ -111,7 +111,7 @@ void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq,
 	else if(finflag) printf(" FIN");
 	printf("\n");
 	
-	if(sendto(sockfd,tr_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&cli_addr,cli_addrlen) < 0)
+	if(sendto(sockfd, &tr_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&cli_addr,cli_addrlen) < 0)
 		error("ERROR in sendto");
 	server_seq = server_seq+MAX_PACKET_LENGTH;
 
@@ -160,7 +160,7 @@ void respond(){
 	get_packet(in_buf, &rcv_packet);
 
 	if (rcv_packet.flags & SYN) {
-		char* synbuf = "syn ack"
+		char* synbuf = "syn ack";
 		// only send syn ack then break
 		send_packet(NULL, synbuf, server_seq, rcv_packet.seq_num, 1,0,0,1);
 	} else {
