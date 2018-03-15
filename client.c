@@ -40,7 +40,7 @@ char* hostname;
 struct sockaddr_in serv_addr, cli_addr;
 struct hostent *server;
 socklen_t addrlen;
-int client_seq = 512;
+int global_seq = 10000;
 int rcv_data; // fd receive file
 
 struct Packet {
@@ -59,6 +59,7 @@ struct WindowFrame {
 	struct timeval timesent_tv;
 };
 
+struct WindowFrame window[5];
 
 struct AwaitACK {
 	char buf[MAX_PACKET_LENGTH];
@@ -127,7 +128,6 @@ void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq,
 	
 	if(sendto(sockfd, &tr_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
 		error("ERROR in sendto");
-	client_seq = client_seq+MAX_PACKET_LENGTH;
 /*
 	if(await_packet != NULL){
 		memset(await_packet->buf, 0, MAX_PACKET_LENGTH);
@@ -168,7 +168,16 @@ void respond(){
 	if (rcv_packet.flags & SYN) {
 		char* synbuf = "syn ack";
 		// only send syn ack then break
-		send_packet(NULL, synbuf, client_seq, rcv_packet.seq_num, 1,0,0,0);
+		if (rcv_packet.flags & FIN) {
+			printf("404 file not found\n");
+			send_packet(NULL, "", global_seq, rcv_packet.seq_num, 1,1,0,0);
+			global_seq = global_seq+MAX_PACKET_LENGTH;
+			close(sockfd);
+			exit(1);
+		}
+		send_packet(NULL, synbuf, global_seq, rcv_packet.seq_num, 1,0,0,1);
+		global_seq = global_seq+MAX_PACKET_LENGTH;
+
 	} else {
 		if (rcv_packet.flags & FIN) {
 
@@ -228,7 +237,7 @@ int main(int argc, char *argv[])
 	fgets(buf, 1024, stdin);*/
 	char* buf = "testfile.txt";
 	
-	send_packet(NULL, buf, client_seq, 0, 0, 0, 0, 1);
+	send_packet(NULL, buf, global_seq, 0, 0, 0, 0, 1);
 	
 	while(1){
 		respond();

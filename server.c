@@ -48,7 +48,9 @@ int sockfd, portno;
 struct sockaddr_in serv_addr, cli_addr;
 socklen_t addrlen = sizeof(serv_addr);
 socklen_t cli_addrlen = sizeof(cli_addr);
-int server_seq = 512;
+int fd = -1;
+char filename[256] = {0}; // 255 chars max filename size
+int global_seq = 20000;
 
 struct Packet {
     unsigned short seq_num;
@@ -66,6 +68,7 @@ struct WindowFrame {
 	struct timeval timesent_tv;
 };
 
+struct WindowFrame window[5] = {0};
 
 struct AwaitACK {
 	char buf[MAX_PACKET_LENGTH];
@@ -80,7 +83,13 @@ int get_packet(char* in_buf, struct Packet* rcv_packet) {
 		// memcpy((void*) header,in_buf,HEADER_LENGTH);
 		// memcpy((void*) data, in_buf + HEADER_LENGTH, header->length);
 		// memcpy((void*) rcv_packet, )
-		printf("Receiving packet %d\n", rcv_packet->seq_num);
+		char* synbuf = " SYN";
+		char* empty = "";
+		char* str = empty;
+		if (rcv_packet.flags & SYN)
+			str = synbuf;
+
+		printf("Receiving packet %d%s\n", rcv_packet->seq_num,str);
 		//printf("payload: %s\n", rcv_packet->payload);
 		
 		return 1;
@@ -113,7 +122,6 @@ void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq,
 	
 	if(sendto(sockfd, &tr_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&cli_addr,cli_addrlen) < 0)
 		error("ERROR in sendto");
-	server_seq = server_seq+MAX_PACKET_LENGTH;
 
 /*
 	if(await_packet != NULL){
@@ -145,7 +153,7 @@ void retransmit(struct AwaitACK* await_packet){
 }
 *******/
 
-int fd;
+
 void send_file(){
 	char wrbuf[MAX_PAYLOAD_LENGTH];
 	read(fd, wrbuf, MAX_PAYLOAD_LENGTH);
@@ -160,20 +168,43 @@ void respond(){
 	get_packet(in_buf, &rcv_packet);
 
 	if (rcv_packet.flags & SYN) {
-		char* synbuf = "syn ack";
-		// only send syn ack then break
-		send_packet(NULL, synbuf, server_seq, rcv_packet.seq_num, 1,0,0,1);
+		int finish = 0;
+		if (rcv_packet.flags & ACK) {
+		} else {
+			strncpy(filename, rcv_packet.payload, 256);
+			if (fd = open(filename, 0_RDONLY) < 0)
+				finish = 1;
+		
+			char* syn_buf = "syn";
+			send_packet(NULL, syn_buf, global_seq, rcv_packet.seq_num, 0,finish,0,1);
+			global_seq = global_seq+MAX_PACKET_LENGTH;
+		}
 	} else {
 		if (rcv_packet.flags & FIN) {
+			// stuff
 
+			if (rcv_packet.flags & ACK) {
+				close(sockfd);
+				exit(1);
+			}
 		}
 		if (rcv_packet.flags & FRAG) {
-
+			// probably never
 		}
 		if (rcv_packet.flags & ACK) {
-		
+			
 		}
 	}
+
+/*
+struct WindowFrame {
+	struct Packet packet;
+	int sent;
+	int ack;
+	int timeout;
+	struct timeval timesent_tv;
+};
+*/
 
 	// printf("%d %d %d\n", header.ack_num, header.length, header.flags);
 	// printf("received message: %d \n%s\n", strlen(payload), payload);
