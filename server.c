@@ -71,6 +71,7 @@ int get_packet(char* in_buf, struct PacketHeader* header, char* data) {
 	return 0;
 }
 
+//Add pointer to AwaitACK field if an ACK is expected. Else, input NULL.
 void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq, unsigned short acknum, 
 				 unsigned char ackflag, unsigned char finflag, unsigned char fragflag, unsigned char synflag){
 	char buf[MAX_PACKET_LENGTH];
@@ -100,9 +101,22 @@ void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq,
 		memcpy((void*) &await_packet->header, (void*) &header, HEADER_LENGTH);
 		await_packet->timeout = 1;
 	}
-	
 }
 
+void retransmit(struct AwaitACK* await_packet){
+	char buf[MAX_PACKET_LENGTH];
+	memset(buf, 0, MAX_PACKET_LENGTH);
+	memcpy(buf,(void*) &await_packet->header, HEADER_LENGTH);
+	memcpy(buf + HEADER_LENGTH, await_packet->buf, await_packet->header.length);
+	
+	printf("Sending packet %d %d", await_packet->header.seq_num, window_size);
+	if(SYN & await_packet->header.flags) printf(" SYN");
+	else if(FIN & await_packet->header.flags) printf(" FIN");
+	printf(" Retransmission\n");
+	
+	if(sendto(sockfd,buf, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&cli_addr,cli_addrlen) < 0)
+	error("ERROR in sendto");
+}
 
 //Primary event loop
 char in_buf[1024]; //Buffer for HTTP GET input
@@ -111,8 +125,8 @@ void respond(){
 	memset(in_buf, 0, 1024);  // reset memory
 	char payload[1024] = {0};
 	if(get_packet(in_buf, &header, payload)){
-		printf("%d %d %d\n", header.ack_num, header.length, header.flags);
-		printf("received message: %d \n%s\n", strlen(payload), payload);
+		//printf("%d %d %d\n", header.ack_num, header.length, header.flags);
+		//printf("received message: %d \n%s\n", strlen(payload), payload);
 		char* buf = "Server Acknowledged";
 		send_packet(NULL, buf, 2002, 366, 0, 1, 0, 1);
 	}
