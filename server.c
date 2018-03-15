@@ -118,6 +118,14 @@ void retransmit(struct AwaitACK* await_packet){
 	error("ERROR in sendto");
 }
 
+int fd;
+void send_file(){
+	char wrbuf[MAX_PAYLOAD_LENGTH];
+	read(fd, wrbuf, MAX_PAYLOAD_LENGTH);
+	
+	
+}
+
 //Primary event loop
 char in_buf[1024]; //Buffer for HTTP GET input
 struct PacketHeader header;
@@ -146,14 +154,16 @@ int main(int argc, char *argv[])
     if (sockfd < 0)
         error("ERROR opening socket");
     
-
+	
     // fill in address info
 	memset((char *) &serv_addr, 0, sizeof(serv_addr));   // reset memory
     portno = atoi(argv[1]);
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(portno);
-
+	
+	fd = open("test.jpg", O_RDONLY);
+	
     if (bind(sockfd, (struct sockaddr *) &serv_addr, addrlen) < 0)
         error("ERROR on binding");
 
