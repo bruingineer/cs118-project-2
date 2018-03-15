@@ -162,21 +162,21 @@ char in_buf[MAX_PACKET_LENGTH]; //Buffer for HTTP GET input
 struct Packet rcv_packet;
 void respond(){
 	memset(in_buf, 0, MAX_PACKET_LENGTH);  // reset memory
-	char payload[MAX_PACKET_LENGTH] = {0};
+	//char payload[MAX_PACKET_LENGTH] = {0};
 	get_packet(in_buf, &rcv_packet);
 
-	if (header.flags & SYN) {
+	if (rcv_packet.flags & SYN) {
 		char* synbuf = "syn ack"
 		// only send syn ack then break
-		send_packet(NULL, synbuf, server_seq, header.seq_num, 1,0,0,1);
+		send_packet(NULL, synbuf, server_seq, rcv_packet.seq_num, 1,0,0,1);
 	} else {
-		if (header.flags & FIN) {
+		if (rcv_packet.flags & FIN) {
 
 		}
-		if (header.flags & FRAG) {
+		if (rcv_packet.flags & FRAG) {
 
 		}
-		if (header.flags & ACK) {
+		if (rcv_packet.flags & ACK) {
 		
 		}
 	}

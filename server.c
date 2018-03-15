@@ -51,18 +51,18 @@ socklen_t cli_addrlen = sizeof(cli_addr);
 int server_seq = 512;
 
 struct Packet {
-    unsigned short seq_num = 0;
-	unsigned short ack_num = 0;
-	unsigned short length = 0;
-    unsigned char flags = 0;  // ACK, FIN, FRAG, SYN
-    char payload[MAX_PAYLOAD_LENGTH] = {0};
+    unsigned short seq_num;
+	unsigned short ack_num;
+	unsigned short length;
+    unsigned char flags;  // ACK, FIN, FRAG, SYN
+    char payload[MAX_PAYLOAD_LENGTH];
 };
 
 struct WindowFrame {
 	struct Packet packet;
-	int sent = 0;
-	int ack = 0;
-	int timeout = 0;
+	int sent;
+	int ack;
+	int timeout;
 	struct timeval timesent_tv;
 }
 
@@ -156,21 +156,21 @@ char in_buf[MAX_PACKET_LENGTH]; //Buffer
 struct Packet rcv_packet;
 void respond(){
 	memset(in_buf, 0, MAX_PACKET_LENGTH);  // reset memory
-	char payload[MAX_PACKET_LENGTH] = {0};
+	//char payload[MAX_PACKET_LENGTH] = {0};
 	get_packet(in_buf, &rcv_packet);
 
-	if (header.flags & SYN) {
+	if (rcv_packet.flags & SYN) {
 		char* synbuf = "syn ack"
 		// only send syn ack then break
-		send_packet(NULL, synbuf, server_seq, header.seq_num, 1,0,0,1);
+		send_packet(NULL, synbuf, server_seq, rcv_packet.seq_num, 1,0,0,1);
 	} else {
-		if (header.flags & FIN) {
+		if (rcv_packet.flags & FIN) {
 
 		}
-		if (header.flags & FRAG) {
+		if (rcv_packet.flags & FRAG) {
 
 		}
-		if (header.flags & ACK) {
+		if (rcv_packet.flags & ACK) {
 		
 		}
 	}
