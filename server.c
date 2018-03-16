@@ -61,27 +61,11 @@ struct WindowFrame {
 
 struct WindowFrame window[5] = {0};
 
-struct AwaitACK {
-	char buf[MAX_PACKET_LENGTH];
-	//struct PacketHeader header;
-	int timeout;
-};
-
-
 int get_packet(char* in_buf, struct Packet* rcv_packet) {
 	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &cli_addr, &cli_addrlen);
 	if(recvlen > 0){
-		// memcpy((void*) header,in_buf,HEADER_LENGTH);
-		// memcpy((void*) data, in_buf + HEADER_LENGTH, header->length);
-		// memcpy((void*) rcv_packet, )
-		char* synbuf = " SYN";
-		char* empty = "";
-		char* str = empty;
-		if (rcv_packet->flags & SYN)
-			str = synbuf;
 
-		printf("Receiving packet %d%s\n", rcv_packet->seq_num,str);
-		//printf("payload: %s\n", rcv_packet->payload);
+		printf("Receiving packet %d\n", rcv_packet->ack_num);
 		
 		return 1;
 	}
@@ -89,7 +73,7 @@ int get_packet(char* in_buf, struct Packet* rcv_packet) {
 }
 
 //Add pointer to AwaitACK field if an ACK is expected. Else, input NULL.
-void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq, unsigned short acknum, 
+void send_packet(struct WindowFrame* frame, char* input, unsigned short seq, unsigned short acknum, 
 				 unsigned char ackflag, unsigned char finflag, unsigned char fragflag, unsigned char synflag){
 	
 	char buf[MAX_PACKET_LENGTH] = {0};
@@ -114,16 +98,15 @@ void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq,
 	if(sendto(sockfd, &tr_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&cli_addr,cli_addrlen) < 0)
 		error("ERROR in sendto");
 
-/*
-	if(await_packet != NULL){
-		memset(await_packet->buf, 0, MAX_PACKET_LENGTH);
-		memcpy(await_packet->buf, buf, HEADER_LENGTH + datalen);
-
-		memset((void*) &await_packet->header, 0, HEADER_LENGTH);
-		memcpy((void*) &await_packet->header, (void*) &header, HEADER_LENGTH);
-		await_packet->timeout = 1;
+	if(frame != NULL){
+		frame->packet = tr_packet;
+		frame->sent = 0;
+		frame->ack = 0;
+		frame->timeout = 0;
+		gettimeofday(&frame->timesent_tv,NULL);
+		//frame->timesent_tv;
 	}
-*/
+
 
 }
 
@@ -144,7 +127,6 @@ void retransmit(struct AwaitACK* await_packet){
 }
 *******/
 
-
 void send_file(){
 	char wrbuf[MAX_PAYLOAD_LENGTH];
 	read(fd, wrbuf, MAX_PAYLOAD_LENGTH);
@@ -152,7 +134,8 @@ void send_file(){
 
 // grabs next MAX PAYLOAD SIZE bytes from the file to be sent
 // inits the frame pointed to by frame
-// returns the data length
+// returns the data length 
+
 int next_file_window_frame(struct WindowFrame* frame) {
 	int r = read(fd,frame->packet.payload,MAX_PAYLOAD_LENGTH);
 	frame->packet.length = r;
@@ -171,6 +154,7 @@ int next_file_window_frame(struct WindowFrame* frame) {
 	return frame->packet.length;
 }
 
+
 //Primary event loop
 char in_buf[MAX_PACKET_LENGTH]; //Buffer 
 struct Packet rcv_packet;
@@ -186,6 +170,7 @@ void respond(){
 			int i;
 			for(i=0; i < 5; i=i+1) {
 
+				// reads next part of file and puts it in window
 				if (next_file_window_frame(window + i) == 0) {
 					// do something for when done reading
 					break;
@@ -221,10 +206,10 @@ void respond(){
 
 		// process window here
 		// check if any packets can be saved in order and move the window up
-		// then fill window with next payloads from 
+		// then fill window with next payloads from next_file_window_frame
 		int i; 
 		for (i = 0; i < 5; i = i+1) {
-			WindowFrame* currentFrame = (window + i);
+			struct WindowFrame* currentFrame = (window + i);
 			// 'remove' consecutive acked packets from the beginning of the window array 
 			// shift other frames in array
 			// yes i know this would be 'better' implemented as a queue with pointers
@@ -240,7 +225,7 @@ void respond(){
 			}
 		}
 
-		// read(fd, window[frame].packet.payload, MAX_PAYLOAD_LENGTH)
+
 		// check for unsent packets in window, send them and log the time in timesent_tv
 		// check for timeouts 
 

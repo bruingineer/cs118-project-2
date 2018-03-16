@@ -39,6 +39,7 @@ char* hostname;
 struct sockaddr_in serv_addr, cli_addr;
 struct hostent *server;
 socklen_t addrlen;
+// sequence # doesn't matter in client
 int global_seq = 10000;
 int rcv_data; // fd receive file
 
@@ -60,34 +61,11 @@ struct WindowFrame {
 
 struct WindowFrame window[5] = {0};
 
-struct AwaitACK {
-	char buf[MAX_PACKET_LENGTH];
-	//struct PacketHeader header;
-	int timeout;
-};
-
-
-/* OLD GET PACKET
-int get_packet(char* in_buf, struct PacketHeader* header, char* data) {
-	int recvlen = recvfrom(sockfd, in_buf, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &serv_addr, &addrlen);
-	if(recvlen > 0){
-		memcpy((void*) header,in_buf, HEADER_LENGTH);
-		memcpy((void*) data, in_buf + HEADER_LENGTH, header->length);
-		printf("Receiving packet %d\n", header->seq_num);
-		return 1;
-	}
-	return 0;
-}
-*/
-
 int get_packet(char* in_buf, struct Packet* rcv_packet) {
 	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &serv_addr, &addrlen);
 	if(recvlen > 0){
-		// memcpy((void*) header,in_buf,HEADER_LENGTH);
-		// memcpy((void*) data, in_buf + HEADER_LENGTH, header->length);
-		// memcpy((void*) rcv_packet, )
+
 		printf("Receiving packet %d\n", rcv_packet->seq_num);
-		//printf("payload: %s\n", rcv_packet->payload);
 		
 		return 1;
 	}
@@ -120,9 +98,11 @@ void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq,
 	};
 	memcpy(tr_packet.payload, input, datalen);
 
-	printf("Sending packet %d %d", seq, WINDOW_SIZE_BYTES);
-	if(synflag) printf(" SYN");
+	//printf("Sending packet %d %d", seq, WINDOW_SIZE_BYTES);
+	// client prints
+	if(synflag) printf("Sending packet SYN");
 	else if(finflag) printf(" FIN");
+	else printf("Sending packet %d", seq);
 	printf("\n");
 	
 	if(sendto(sockfd, &tr_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
