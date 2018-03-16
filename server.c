@@ -299,13 +299,17 @@ int main(int argc, char *argv[])
     };
     int r = 0;
     while(1){
+		
+		
     	// use poll to detect when data is ready to be read from socket
+		if(recvfrom(sockfd, in_buf, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &cli_addr, &cli_addrlen) > 0) printf("get");
     	r = poll(fds,1,0);
 		if (r < 0) {
 			// poll error
 			error("error in poll\n");
 		}
 		else if (fds[0].revents & POLLIN) {
+			printf("something");
 			respond();
 		}
     }

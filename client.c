@@ -90,11 +90,13 @@ void send_packet(struct WindowFrame* frame, char* input, unsigned short seq, uns
 	//printf("Sending packet %d %d", seq, WINDOW_SIZE_BYTES);
 	// client prints
 	if(synflag) printf("Sending packet SYN");
-	else if(finflag) printf(" FIN");
-	else printf("Sending packet %d", seq);
+	else {
+		printf("Sending packet %d", seq);
+		if(finflag) printf(" FIN");
+	}
 	printf("\n");
 	
-	if(sendto(sockfd, &tr_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
+	if(sendto(sockfd, &tr_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&serv_addr, addrlen) < 0)
 		error("ERROR in sendto");
 	if(frame != NULL){
 		frame->packet = tr_packet;
@@ -128,7 +130,7 @@ struct Packet rcv_packet;
 void respond(){
 	memset(in_buf, 0, MAX_PACKET_LENGTH);  // reset memory
 	//char payload[MAX_PACKET_LENGTH] = {0};
-	get_packet(in_buf, &rcv_packet);
+	if(get_packet(in_buf, &rcv_packet) == 0) return;
 
 	if (rcv_packet.flags & SYN && rcv_packet.flags & ACK) {
 		char* synbuf = "syn ack";
@@ -157,6 +159,7 @@ void respond(){
 			if(fragments == 0){
 				send_packet(NULL, NULL, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 0,1,0,0);
 			}
+			//TODO: Write to file buffer filebuf
 		}
 		if (rcv_packet.flags & ACK) {
 		
