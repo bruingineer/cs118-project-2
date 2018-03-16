@@ -133,18 +133,20 @@ int timeout_remaining(struct timeval timesent_tv){
 	return (RTO-elapsed_msec);
 }
 
+int stateflag; //1 = We have already written to file, FIN. 3 = TIME_WAIT
 //Handles resending
 void check_timeout(){
 	if(window1.sent == 1 && window1.ack == 0){//For all awaiting a return
 		if (timeout_remaining(window1.timesent_tv) <= 0) {
 			retransmit(&window1);
-			global_timeout = RTO;
+			if(stateflag == 3) global_timeout = RTO*2;
+			else global_timeout = RTO;
 		}
 	}
 }
 
 //Primary event loop
-int stateflag; //States if we have already written to file
+
 int fragments;
 int* fragment_track;
 int fragbegin;
@@ -158,9 +160,9 @@ void respond(){
 		// only send syn ack then break
 		if (rcv_packet.flags & FIN) {
 			printf("404 file not found\n");
-			send_packet(NULL, "", 0, 0, rcv_packet.seq_num + recvlen, 1,1,0,0);
-			close(sockfd);
-			exit(1);
+			send_packet(&window1, NULL, 0, 0, rcv_packet.seq_num + recvlen, 0,1,0,0);
+			stateflag = 1;
+			return;
 		}
 		
 		//Initialize input array and trackers
@@ -177,12 +179,10 @@ void respond(){
 		send_packet(&window1, NULL, 0, 0, fragbegin, 1,0,0,0);
 		
 	} else {
-		//Received FIN - close connection
-		if (rcv_packet.flags & FIN) {
-			if(fragment_track != NULL) free(fragment_track);
-			if(filebuf != NULL) free(filebuf);
-			close(sockfd);
-			exit(0);
+		//Received FIN - reply FINACK
+		if (rcv_packet.flags & FIN && rcv_packet.flags & ACK) {
+			send_packet(&window1, NULL, 0, 0, fragbegin, 1,1,0,0);
+			global_timeout = RTO*2;
 		}
 		//Receive file fragment
 		if (rcv_packet.flags & FRAG) {
@@ -263,6 +263,12 @@ int main(int argc, char *argv[])
 		else if (fds[0].revents & POLLIN) {
 			respond();
 		} else if (global_timeout != 0) {//Something timed out. Handle resending
+			if(stateflag == 3){//TIME-WAIT in FINACK elapsed. Close server
+				if(fragment_track != NULL) free(fragment_track);
+				if(filebuf != NULL) free(filebuf);
+				close(sockfd);
+				exit(0);
+			}
 			check_timeout();
 		}
 	}
