@@ -148,9 +148,11 @@ void respond(){
 		//Initialize input array and trackers
 		memset((void*) &filesize, 0, sizeof(filesize));
 		memcpy((void*) &filesize, rcv_packet.payload, sizeof(filesize));
-		filebuf = (char*) malloc(filesize * sizeof(char));//The buffer itself
-		memset(filebuf, 0, filesize);
+		//filebuf = (char*) malloc(filesize * sizeof(char));//The buffer itself
+		
 		fragments = (filesize / MAX_PAYLOAD_LENGTH) + 1;//Number of packets needed
+		filebuf = (char*) malloc(fragments * MAX_PAYLOAD_LENGTH * sizeof(char));
+		memset(filebuf, 0, fragments * MAX_PAYLOAD_LENGTH * sizeof(char));
 		fragment_track = (int*) malloc(fragments * sizeof(int));//Keeps track where things should go
 		int i;
 		for(i = 0; i < fragments; i++) fragment_track[i] = 0;
@@ -159,21 +161,24 @@ void respond(){
 		send_packet(NULL, synbuf, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
 		
 	} else {
+		//Received FIN - close connection
 		if (rcv_packet.flags & FIN) {
 			free(filebuf);
 			free(fragment_track);
 			close(sockfd);
 			exit(0);
 		}
+		//Receive file fragment
 		if (rcv_packet.flags & FRAG) {
 			int index = (rcv_packet.seq_num - fragbegin)/MAX_PACKET_LENGTH;
 			if(fragment_track[index] == 0){
-				memcpy(filebuf+(index*MAX_PAYLOAD_LENGTH),rcv_packet.payload,rcv_packet.length);
+				printf("Index: %d Size: %d\n",index, rcv_packet.length);
+				memcpy(filebuf+index*MAX_PAYLOAD_LENGTH,rcv_packet.payload,rcv_packet.length);
 				fragment_track[index] = 1;
 				fragments--;
 			}
 			if(fragments == 0){
-				write(rcv_data,filebuf,sizeof(filebuf));
+				write(rcv_data,filebuf,filesize);
 				send_packet(NULL, NULL, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 0,1,0,0);
 			} else {
 				send_packet(NULL, NULL, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
