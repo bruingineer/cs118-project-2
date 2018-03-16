@@ -226,12 +226,12 @@ int timeout_remaining(struct timeval timesent_tv){
 void refresh_timeout(){
 	global_timeout = 0;
 	int i;
-	int shortest_TO_msec = RTO*2 + 1;
+	int shortest_TO_msec = RTO*4 + 1;
 	int timeleft;
 	for(i = 0; i < 5; i++){
 		if(window[i].sent == 1 && window[i].ack == 0){//For all awaiting a return
 			timeleft = timeout_remaining(window[i].timesent_tv);
-			if(timeleft == 0){
+			if(timeleft <= 0){
 				retransmit(&window[i]);
 				timeleft = RTO;
 			}
@@ -239,7 +239,7 @@ void refresh_timeout(){
 				shortest_TO_msec = timeleft;
 		}
 	}
-	if(shortest_TO_msec < RTO*2 + 1) global_timeout = shortest_TO_msec;
+	if(shortest_TO_msec < RTO*4 + 1) global_timeout = shortest_TO_msec;
 	// printf("seq: %d, elapsed_msec: %d\n", window[to_iter].packet.seq_num, elapsed_msec);
 }
 
@@ -248,6 +248,7 @@ void check_timeout(){
 	int i;
 	for(i = 0; i < 5; i++){
 		if(window[i].sent == 1 && window[i].ack == 0){//For all awaiting a return
+			//printf("Frame %d: %d %d\n",i,window[i].packet.seq_num,timeout_remaining(window[i].timesent_tv));
 			if (timeout_remaining(window[i].timesent_tv) <= 0) retransmit(&window[i]);
 		}
 	}
@@ -300,13 +301,13 @@ void respond(){
 				empty_window();
 				send_packet(&window[0], NULL, 0, global_seq, rcv_packet.seq_num, 0,1,0,0);
 				stateflag = 3;
-				global_timeout = RTO*2;
+				global_timeout = RTO*4;
 			}
 			break;
 		case 3://Await client timeout FINACK in case
 			if (rcv_packet.flags & FIN) {
 				retransmit(&window[0]);
-				global_timeout = RTO*2;
+				global_timeout = RTO*4;
 			}
 			break;
 		default:

@@ -135,33 +135,30 @@ int timeout_remaining(struct timeval timesent_tv){
 
 // TIMEOUT logic
 // go thru the window calculate the shortest timeout 
-void refresh_timeout(){
+/*void refresh_timeout(){
 	global_timeout = 0;
 	int shortest_TO_msec = RTO + 1;
 	int timeleft;
 	if(window1.sent == 1 && window1.ack == 0){//For all awaiting a return
 		timeleft = timeout_remaining(window1.timesent_tv);
-		printf("timeleft %d\n",timeleft);
 		if(timeleft <= 0){
 			retransmit(&window1);
 			timeleft = RTO;
 		}
-		
 		if (timeleft < shortest_TO_msec)
 			shortest_TO_msec = timeleft;
 	}
 
 	if(shortest_TO_msec < RTO + 1) global_timeout = shortest_TO_msec;
 	// printf("seq: %d, elapsed_msec: %d\n", window[to_iter].packet.seq_num, elapsed_msec);
-}
+}*/
 
-/*//Handles resending
+//Handles resending
 void check_timeout(){
 	if(window1.sent == 1 && window1.ack == 0){//For all awaiting a return
 		if (timeout_remaining(window1.timesent_tv) <= 0) retransmit(&window1);
 	}
-	refresh_timeout();
-}*/
+}
 
 //Primary event loop
 int stateflag; //States if we have already written to file
@@ -215,13 +212,13 @@ void respond(){
 				fragments--;
 			}
 
-			//if(fragments == 1){
+			/*
 				int i = 0;
 				for(; i < (filesize / MAX_PAYLOAD_LENGTH) + 1; i++){
 					printf("%d",fragment_track[i]);
 				}
 				printf("\n");
-			//}
+			*/
 			if(fragments <= 0){
 				if(stateflag == 0){
 					write(rcv_data,filebuf,filesize);
@@ -265,12 +262,11 @@ int main(int argc, char *argv[])
 	addrlen = sizeof(serv_addr);
 	
 	send_packet(&window1, argv[3], strlen(argv[3]), 0, 0, 0, 0, 0, 1);
-	refresh_timeout();
 	fragments = -1;
 	stateflag = 0;
 	while(1){
 		respond();
-		refresh_timeout();//Will retransmit if timed out
+		check_timeout();//Will retransmit if timed out
 	}
     return 0;
 }
