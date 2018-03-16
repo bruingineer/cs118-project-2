@@ -97,6 +97,7 @@ unsigned short send_packet(struct WindowFrame* frame, char* input, unsigned shor
 		frame->sent = 1;
 		frame->ack = 0;
 		gettimeofday(&frame->timesent_tv,NULL);
+		global_timeout = RTO;
 	}
 	return datalen+sizeof(tr_packet);
 }
@@ -106,9 +107,11 @@ void retransmit(struct WindowFrame* frame){
 	memset(buf, 0, MAX_PACKET_LENGTH);
 	memcpy(buf,(void*) &frame->packet, MAX_PACKET_LENGTH);*/
 	
-	printf("Sending packet %d %d", frame->packet.ack_num, WINDOW_SIZE_BYTES);
-	if(SYN & frame->packet.flags) printf(" SYN");
-	else if(FIN & frame->packet.flags) printf(" FIN");
+	if(frame->packet.flags & SYN) printf("Sending packet SYN");
+	else {
+		printf("Sending packet %d", frame->packet.ack_num);
+		if(FIN & frame->packet.flags) printf(" FIN");
+	}
 	printf(" Retransmission\n");
 	
 	if(sendto(sockfd, &(frame->packet), frame->packet.length + sizeof(frame->packet), 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
@@ -133,7 +136,10 @@ int timeout_remaining(struct timeval timesent_tv){
 //Handles resending
 void check_timeout(){
 	if(window1.sent == 1 && window1.ack == 0){//For all awaiting a return
-		if (timeout_remaining(window1.timesent_tv) <= 0) retransmit(&window1);
+		if (timeout_remaining(window1.timesent_tv) <= 0) {
+			retransmit(&window1);
+			global_timeout = RTO;
+		}
 	}
 }
 
@@ -173,10 +179,8 @@ void respond(){
 	} else {
 		//Received FIN - close connection
 		if (rcv_packet.flags & FIN) {
-			/*if(fragments > -1){
-				free(fragment_track);
-				free(filebuf);
-			}*/
+			if(fragment_track != NULL) free(fragment_track);
+			if(filebuf != NULL) free(filebuf);
 			close(sockfd);
 			exit(0);
 		}
@@ -199,6 +203,7 @@ void respond(){
 			if(fragments <= 0){
 				if(stateflag == 0){
 					write(rcv_data,filebuf,filesize);
+					close(rcv_data);
 					stateflag = 1;
 				}
 				send_packet(&window1, NULL, 0, 0, rcv_packet.seq_num + recvlen, 0,1,0,0);
@@ -228,7 +233,7 @@ int main(int argc, char *argv[])
     if (sockfd < 0)
         error("ERROR opening socket");
 	
-	server = gethostbyname("127.0.0.1");
+	server = gethostbyname(hostname);
 	if(server == NULL) error("No such host");
 	
     // fill in address info for server
@@ -238,12 +243,28 @@ int main(int argc, char *argv[])
     serv_addr.sin_port = htons(portno);
 	addrlen = sizeof(serv_addr);
 	
+	struct pollfd fds[] = {
+		{sockfd, POLLIN}
+    };
+	
 	send_packet(&window1, argv[3], strlen(argv[3]), 0, 0, 0, 0, 0, 1);
 	fragments = -1;
+	filebuf = NULL;
+	fragment_track = NULL;
 	stateflag = 0;
+	int r;
 	while(1){
-		respond();
-		check_timeout();//Will retransmit if timed out
+    	// use poll to detect when data is ready to be read from socket
+    	r = poll(fds,1,global_timeout);
+		if (r < 0) {
+			// poll error
+			error("error in poll\n");
+		}
+		else if (fds[0].revents & POLLIN) {
+			respond();
+		} else if (global_timeout != 0) {//Something timed out. Handle resending
+			check_timeout();
+		}
 	}
     return 0;
 }

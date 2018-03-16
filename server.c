@@ -263,6 +263,7 @@ void respond(){
 				if(finish == 0) stateflag = 1;
 			}
 			if (rcv_packet.flags & FIN) {
+				close(fd);
 				send_packet(&window[0], NULL, 0, global_seq, rcv_packet.seq_num, 0,1,0,0);
 				stateflag = 3;
 			}
