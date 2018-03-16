@@ -135,11 +135,11 @@ void init_file_transfer(){
 			num_frames = num_frames + 1;
 		}
 		// once window is full, break
-	}
+	}/*
 	int test = 0;
 	for (; test < 5; test = test +1 ) {
 		printf("frame %d seq: %d\n", test, window[test].packet.seq_num);
-	}
+	}*/
 }
 
 void file_transfer(unsigned short acknum){
@@ -148,7 +148,7 @@ void file_transfer(unsigned short acknum){
 	// then fill window with next payloads from next_file_window_frame
 	int i;
 	for(i = 0; i < 4; i++){
-		if(acknum == window[i].packet.seq_num - MAX_PACKET_LENGTH){
+		if(acknum == window[i].packet.seq_num + MAX_PACKET_LENGTH){
 			window[i].ack = 1;
 			break;
 		}
@@ -170,7 +170,7 @@ void file_transfer(unsigned short acknum){
 		// where elements don't have to be shifted in an array
 		if (window[i].ack) {
 			j = i + 1;//Start this iterator
-			while(j < 4){
+			while(j < 5){
 				if(!window[j].ack){
 					window[i] = window[j];
 					i++;
@@ -178,18 +178,17 @@ void file_transfer(unsigned short acknum){
 				}
 				else j++;
 			}
-			if(j >= 4) break;
+			break;
 		} else i++;
 	}
-	/*test = 0;
-	for (; test < 5; test = test +1 ) {
-		printf("frame %d seq: %d\n", test, window[test].packet.seq_num);
-	}*/
 	if(j != -1){//j is set => repopulate window, starting from i
-		while(i < 4){
+		while(i < 5){
 			int r = read(fd,buf,MAX_PAYLOAD_LENGTH);
-			if (r == 0) {
-				break; //File is completely transmitted!
+			if (r == 0) {//File is completely transmitted!
+				for(; i < 5; i++){
+					window[i].ack = 1;
+				}
+				break; 
 			}
 			else{ 
 				send_packet(&window[i], buf, sizeof(buf), global_seq, 0, 0, 0, 1, 0);
@@ -199,6 +198,10 @@ void file_transfer(unsigned short acknum){
 			i++;
 		}
 	}
+	/*int test = 0;
+	for (; test < 5; test = test +1 ) {
+		printf("frame %d seq: %d\n", test, window[test].packet.seq_num);
+	}*/
 }
 
 void empty_window(){
@@ -215,7 +218,7 @@ int timeout_remaining(struct timeval timesent_tv){
 	gettimeofday(&current_time_tv,NULL);
 	int elapsed_msec = (current_time_tv.tv_sec - timesent_tv.tv_sec)*1000
 				+ (current_time_tv.tv_usec - timesent_tv.tv_usec)/1000;
-	return (500-elapsed_msec);
+	return (RTO-elapsed_msec);
 }
 
 // TIMEOUT logic
@@ -223,16 +226,20 @@ int timeout_remaining(struct timeval timesent_tv){
 void refresh_timeout(){
 	global_timeout = 0;
 	int i;
-	int shortest_TO_msec = 501;
+	int shortest_TO_msec = RTO*2 + 1;
 	int timeleft;
 	for(i = 0; i < 5; i++){
 		if(window[i].sent == 1 && window[i].ack == 0){//For all awaiting a return
 			timeleft = timeout_remaining(window[i].timesent_tv);
-			if (timeleft < shortest_TO_msec)
+			if(timeleft == 0){
+				retransmit(&window[i]);
+				timeleft = RTO;
+			}
+			if(timeleft < shortest_TO_msec)
 				shortest_TO_msec = timeleft;
 		}
 	}
-	if(shortest_TO_msec < 501) global_timeout = shortest_TO_msec;
+	if(shortest_TO_msec < RTO*2 + 1) global_timeout = shortest_TO_msec;
 	// printf("seq: %d, elapsed_msec: %d\n", window[to_iter].packet.seq_num, elapsed_msec);
 }
 
@@ -277,8 +284,7 @@ void respond(){
 			}
 			if (rcv_packet.flags & FIN) {
 				send_packet(&window[0], NULL, 0, global_seq, rcv_packet.seq_num, 0,1,0,0);
-				close(sockfd);
-				exit(0);
+				stateflag = 3;
 			}
 			break;
 		case 1://Awaiting client handshake ACK - ensures data is allocated
@@ -293,11 +299,15 @@ void respond(){
 			} else if (rcv_packet.flags & FIN) {
 				empty_window();
 				send_packet(&window[0], NULL, 0, global_seq, rcv_packet.seq_num, 0,1,0,0);
-				close(sockfd);
-				exit(0);
+				stateflag = 3;
+				global_timeout = RTO*2;
 			}
 			break;
 		case 3://Await client timeout FINACK in case
+			if (rcv_packet.flags & FIN) {
+				retransmit(&window[0]);
+				global_timeout = RTO*2;
+			}
 			break;
 		default:
 			break;
@@ -352,6 +362,10 @@ int main(int argc, char *argv[])
 		else if (fds[0].revents & POLLIN) {
 			respond();
 		} else if (global_timeout != 0) {//Something timed out. Handle resending
+			if(stateflag == 3){//TIME-WAIT in FINACK elapsed. Close server
+				close(sockfd);
+				exit(0);
+			}
 			check_timeout();
 		}
     }

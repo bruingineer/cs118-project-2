@@ -130,21 +130,25 @@ int timeout_remaining(struct timeval timesent_tv){
 	gettimeofday(&current_time_tv,NULL);
 	int elapsed_msec = (current_time_tv.tv_sec - timesent_tv.tv_sec)*1000
 				+ (current_time_tv.tv_usec - timesent_tv.tv_usec)/1000;
-	return (500-elapsed_msec);
+	return (RTO-elapsed_msec);
 }
 
 // TIMEOUT logic
 // go thru the window calculate the shortest timeout 
 void refresh_timeout(){
 	global_timeout = 0;
-	int shortest_TO_msec = 501;
+	int shortest_TO_msec = RTO + 1;
 	int timeleft;
 	if(window1.sent == 1 && window1.ack == 0){//For all awaiting a return
 		timeleft = timeout_remaining(window1.timesent_tv);
+		if(timeleft == 0){
+			retransmit(&window1);
+			timeleft = RTO;
+		}
 		if (timeleft < shortest_TO_msec)
 			shortest_TO_msec = timeleft;
 	}
-	if(shortest_TO_msec < 501) global_timeout = shortest_TO_msec;
+	if(shortest_TO_msec < RTO + 1) global_timeout = shortest_TO_msec;
 	// printf("seq: %d, elapsed_msec: %d\n", window[to_iter].packet.seq_num, elapsed_msec);
 }
 
