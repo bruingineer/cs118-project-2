@@ -89,10 +89,10 @@ unsigned short send_packet(struct WindowFrame* frame, char* input, unsigned shor
 	if(synflag) printf(" SYN");
 	else if(finflag) printf(" FIN");
 	printf("\n");
-	
+
 	if(sendto(sockfd, &tr_packet, datalen+sizeof(tr_packet), 0, (struct sockaddr *)&cli_addr,cli_addrlen) < 0)
 		error("ERROR in sendto");
-
+	
 	if(frame != NULL){
 		frame->packet = tr_packet;
 		frame->sent = 0;
