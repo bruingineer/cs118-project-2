@@ -157,6 +157,7 @@ void respond(){
 		if (rcv_packet.flags & FRAG) {
 			fragments--;
 			if(fragments == 0){
+				//write()
 				send_packet(NULL, NULL, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 0,1,0,0);
 			} else {
 				send_packet(NULL, NULL, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
@@ -182,7 +183,10 @@ int main(int argc, char *argv[])
 	hostname = argv[1];
 	portno = atoi(argv[2]);
 	char* buf = argv[3];
-	rcv_data = creat("receive.data", O_WRONLY);
+
+	if ((rcv_data = creat("receive.data", O_WRONLY)) < 0) {
+		error("Failed to open file");
+	}
 	
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);  // create socket
     if (sockfd < 0)
