@@ -148,6 +148,7 @@ void respond(){
 		filebuf = (char*) malloc(st_size * sizeof(char));
 		fragments = (st_size / MAX_PAYLOAD_LENGTH) + 1;
 		send_packet(NULL, synbuf, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
+		printf("fragments: %d %d\n",st_size,fragments);
 		
 	} else {
 		if (rcv_packet.flags & FIN) {
@@ -212,7 +213,7 @@ int main(int argc, char *argv[])
     char buf[1024];
 	printf("Enter msg");
 	fgets(buf, 1024, stdin);*/
-	char* buf = "testfile.txt";
+	char* buf = "test.jpg";
 	
 	send_packet(NULL, buf, global_seq, 0, 0, 0, 0, 1);
 	global_seq = global_seq+MAX_PACKET_LENGTH;

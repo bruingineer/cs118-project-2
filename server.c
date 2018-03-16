@@ -228,8 +228,10 @@ void respond(){
 					if (fstat(fd,&s) < 0){ //Attempt to use fstat()
 						 error("fstat() failed");
 					}
+					fprintf(stderr,"%d\n",s.st_size);
 					memcpy(syn_buf, (void*) &s.st_size, sizeof(s.st_size));
 				}
+				fprintf(stderr,"%s\n",filename);
 				// send file size
 				
 				send_packet(NULL, syn_buf, global_seq, rcv_packet.seq_num, 1,finish,0,1);
