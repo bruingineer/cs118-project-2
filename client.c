@@ -141,26 +141,30 @@ void refresh_timeout(){
 	int timeleft;
 	if(window1.sent == 1 && window1.ack == 0){//For all awaiting a return
 		timeleft = timeout_remaining(window1.timesent_tv);
-		if(timeleft == 0){
+		printf("timeleft %d\n",timeleft);
+		if(timeleft <= 0){
 			retransmit(&window1);
 			timeleft = RTO;
 		}
+		
 		if (timeleft < shortest_TO_msec)
 			shortest_TO_msec = timeleft;
 	}
+
 	if(shortest_TO_msec < RTO + 1) global_timeout = shortest_TO_msec;
 	// printf("seq: %d, elapsed_msec: %d\n", window[to_iter].packet.seq_num, elapsed_msec);
 }
 
-//Handles resending
+/*//Handles resending
 void check_timeout(){
 	if(window1.sent == 1 && window1.ack == 0){//For all awaiting a return
 		if (timeout_remaining(window1.timesent_tv) <= 0) retransmit(&window1);
 	}
 	refresh_timeout();
-}
+}*/
 
 //Primary event loop
+int stateflag; //States if we have already written to file
 int fragments;
 int* fragment_track;
 int fragbegin;
@@ -182,8 +186,9 @@ void respond(){
 		//Initialize input array and trackers
 		memset((void*) &filesize, 0, sizeof(filesize));
 		memcpy((void*) &filesize, rcv_packet.payload, sizeof(filesize));
-		filebuf = (char*) malloc(filesize * sizeof(char));//The buffer itself
+
 		fragments = (filesize / MAX_PAYLOAD_LENGTH) + 1;//Number of packets needed
+		filebuf = (char*) malloc(fragments * MAX_PAYLOAD_LENGTH * sizeof(char));//The buffer itself. Larger than necessary to prevent overflow
 		fragment_track = (int*) malloc(fragments * sizeof(int));//Keeps track where things should go
 		int i;
 		for(i = 0; i < fragments; i++) fragment_track[i] = 0;
@@ -209,8 +214,19 @@ void respond(){
 				fragment_track[index] = 1;
 				fragments--;
 			}
-			if(fragments == 0){
-				write(rcv_data,filebuf,filesize);
+
+			//if(fragments == 1){
+				int i = 0;
+				for(; i < (filesize / MAX_PAYLOAD_LENGTH) + 1; i++){
+					printf("%d",fragment_track[i]);
+				}
+				printf("\n");
+			//}
+			if(fragments <= 0){
+				if(stateflag == 0){
+					write(rcv_data,filebuf,filesize);
+					stateflag = 1;
+				}
 				send_packet(&window1, NULL, 0, 0, rcv_packet.seq_num + recvlen, 0,1,0,0);
 			} else {
 				empty_window();//Only relevant for first frag - since before that it awaits first frag
@@ -218,8 +234,6 @@ void respond(){
 			}
 		}
 	}
-	
-	refresh_timeout();
 }
 
 int main(int argc, char *argv[])
@@ -253,12 +267,10 @@ int main(int argc, char *argv[])
 	send_packet(&window1, argv[3], strlen(argv[3]), 0, 0, 0, 0, 0, 1);
 	refresh_timeout();
 	fragments = -1;
-
+	stateflag = 0;
 	while(1){
 		respond();
-		if (global_timeout < 0) {//Something timed out. Handle resending
-			check_timeout();
-		}
+		refresh_timeout();//Will retransmit if timed out
 	}
     return 0;
 }
