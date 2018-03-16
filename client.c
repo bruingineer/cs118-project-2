@@ -40,7 +40,6 @@ struct sockaddr_in serv_addr, cli_addr;
 struct hostent *server;
 socklen_t addrlen;
 // sequence # doesn't matter in client
-int global_seq = 10000;
 int rcv_data; // fd receive file
 char* filebuf;
 
@@ -64,13 +63,13 @@ int get_packet(struct Packet* rcv_packet) {
 	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &serv_addr, &addrlen);
 	if(recvlen > 0){
 		printf("Receiving packet %d\n", rcv_packet->seq_num);
-		return 1;
+		return recvlen;
 	}
-	return recvlen;
+	return 0;
 }
 
 //Add pointer to AwaitACK field if an ACK is expected. Else, input NULL.
-void send_packet(struct WindowFrame* frame, char* input, unsigned short datalen, unsigned short seq, unsigned short acknum, 
+unsigned short send_packet(struct WindowFrame* frame, char* input, unsigned short datalen, unsigned short seq, unsigned short acknum, 
 				 unsigned char ackflag, unsigned char finflag, unsigned char fragflag, unsigned char synflag){
 
 	struct Packet tr_packet = {
@@ -99,6 +98,7 @@ void send_packet(struct WindowFrame* frame, char* input, unsigned short datalen,
 		gettimeofday(&frame->timesent_tv,NULL);
 		//frame->timesent_tv;
 	}
+	return datalen+sizeof(tr_packet);
 }
 
 void retransmit(struct WindowFrame* frame){
@@ -111,8 +111,8 @@ void retransmit(struct WindowFrame* frame){
 	else if(FIN & frame->packet.flags) printf(" FIN");
 	printf(" Retransmission\n");
 	
-	if(sendto(sockfd, buf, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
-	error("ERROR in sendto");
+	if(sendto(sockfd,buf, frame->packet.length + sizeof(frame->packet), 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
+		error("ERROR in sendto");
 }
 
 //Primary event loop
@@ -125,13 +125,11 @@ void respond(){
 	//char payload[MAX_PACKET_LENGTH] = {0};
 	int recvlen;
 	if((recvlen = get_packet(&rcv_packet)) == 0) return;
-
 	if (rcv_packet.flags & SYN && rcv_packet.flags & ACK) {
 		// only send syn ack then break
 		if (rcv_packet.flags & FIN) {
 			printf("404 file not found\n");
-			send_packet(NULL, "", 0, 0, rcv_packet.seq_num, 1,1,0,0);
-			//global_seq = global_seq+MAX_PACKET_LENGTH;
+			send_packet(NULL, "", 0, 0, rcv_packet.seq_num + recvlen, 1,1,0,0);
 			close(sockfd);
 			exit(1);
 		}
@@ -144,9 +142,9 @@ void respond(){
 		fragment_track = (int*) malloc(fragments * sizeof(int));//Keeps track where things should go
 		int i;
 		for(i = 0; i < fragments; i++) fragment_track[i] = 0;
-		fragbegin = rcv_packet.seq_num + MAX_PACKET_LENGTH;
+		fragbegin = rcv_packet.seq_num  + recvlen;
 		//Respond
-		send_packet(NULL, NULL, 0, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
+		send_packet(NULL, NULL, 0, 0, fragbegin, 1,0,0,0);
 		
 	} else {
 		//Received FIN - close connection
@@ -168,7 +166,7 @@ void respond(){
 			}
 			if(fragments == 0){
 				write(rcv_data,filebuf,filesize);
-				send_packet(NULL, NULL, 0, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 0,1,0,0);
+				send_packet(NULL, NULL, 0, 0, rcv_packet.seq_num + recvlen, 0,1,0,0);
 			} else {
 				send_packet(NULL, NULL, 0, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
 			}
@@ -204,8 +202,7 @@ int main(int argc, char *argv[])
     serv_addr.sin_port = htons(portno);
 	addrlen = sizeof(serv_addr);
 	
-	send_packet(NULL, argv[3], strlen(argv[3]), global_seq, 0, 0, 0, 0, 1);
-	global_seq = global_seq+MAX_PACKET_LENGTH;
+	send_packet(NULL, argv[3], strlen(argv[3]), 0, 0, 0, 0, 0, 1);
 	fragments = -1;
 
 	while(1){

@@ -71,7 +71,7 @@ int get_packet(struct Packet* rcv_packet) {
 }
 
 //Add pointer to frame field if an ACK is expected. Else, input NULL.
-void send_packet(struct WindowFrame* frame, char* input, unsigned short datalen, unsigned short seq, unsigned short acknum, 
+unsigned short send_packet(struct WindowFrame* frame, char* input, unsigned short datalen, unsigned short seq, unsigned short acknum, 
 				 unsigned char ackflag, unsigned char finflag, unsigned char fragflag, unsigned char synflag){
 	
 	struct Packet tr_packet = {
@@ -100,6 +100,7 @@ void send_packet(struct WindowFrame* frame, char* input, unsigned short datalen,
 		gettimeofday(&frame->timesent_tv,NULL);
 		//frame->timesent_tv;
 	}
+	return datalen+sizeof(tr_packet);
 }
 
 void retransmit(struct WindowFrame* frame){
@@ -112,26 +113,9 @@ void retransmit(struct WindowFrame* frame){
 	else if(FIN & frame->packet.flags) printf(" FIN");
 	printf(" Retransmission\n");
 	
-	if(sendto(sockfd,buf, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&cli_addr,cli_addrlen) < 0)
-	error("ERROR in sendto");
+	if(sendto(sockfd,buf, frame->packet.length + sizeof(frame->packet), 0, (struct sockaddr *)&cli_addr,cli_addrlen) < 0)
+		error("ERROR in sendto");
 }
-
-// grabs next MAX PAYLOAD SIZE bytes from the file to be sent
-// inits the frame pointed to by frame
-// returns the data length 
-/*
-int next_file_window_frame(struct WindowFrame* frame) {
-	
-	frame->packet.length = r;
-	frame->packet.seq_num = global_seq;
-	global_seq = global_seq + 1024;
-	frame->packet.flags = 0;
-	frame->sent = 0;
-	frame->ack = 0;
-	frame->timeout = 0;
-	send_packet(NULL, buf, 2002, 366, 0, 1, 0, 1);
-	//frame->timesent_tv;
-}*/
 
 void init_file_transfer(){
 	int i;
@@ -144,7 +128,7 @@ void init_file_transfer(){
 		}
 		else{ 
 			send_packet(&window[i], buf, sizeof(buf), global_seq, 0, 0, 0, 1, 0);
-			global_seq = global_seq + 1024;
+			global_seq = global_seq + MAX_PACKET_LENGTH;
 		}
 		// once window is full, break
 	}
@@ -192,7 +176,7 @@ void file_transfer(unsigned short acknum){
 			}
 			else{ 
 				send_packet(&window[i], buf, sizeof(buf), global_seq, 0, 0, 0, 1, 0);
-				global_seq = global_seq + 1024;
+				global_seq = global_seq + MAX_PACKET_LENGTH;
 			}
 			i++;
 		}
@@ -223,8 +207,7 @@ void respond(){
 				}
 				// send file size
 				
-				send_packet(NULL, syn_buf, sizeof(syn_buf), global_seq, rcv_packet.seq_num, 1,finish,0,1);
-				global_seq = global_seq+MAX_PACKET_LENGTH;
+				global_seq = global_seq + send_packet(NULL, syn_buf, sizeof(syn_buf), global_seq, rcv_packet.seq_num, 1,finish,0,1);
 				if(finish == 0) stateflag = 1;
 			}
 			if (rcv_packet.flags & FIN) {
