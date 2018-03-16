@@ -56,7 +56,6 @@ struct WindowFrame {
 	struct Packet packet;
 	int sent;
 	int ack;
-	int timeout;
 	struct timeval timesent_tv;
 };
 //Client only has at most 1 packet awaiting to be ACKed
@@ -97,9 +96,7 @@ unsigned short send_packet(struct WindowFrame* frame, char* input, unsigned shor
 		frame->packet = tr_packet;
 		frame->sent = 1;
 		frame->ack = 0;
-		frame->timeout = 0;
 		gettimeofday(&frame->timesent_tv,NULL);
-		//frame->timesent_tv;
 	}
 	return datalen+sizeof(tr_packet);
 }
@@ -132,26 +129,6 @@ int timeout_remaining(struct timeval timesent_tv){
 				+ (current_time_tv.tv_usec - timesent_tv.tv_usec)/1000;
 	return (RTO-elapsed_msec);
 }
-
-// TIMEOUT logic
-// go thru the window calculate the shortest timeout 
-/*void refresh_timeout(){
-	global_timeout = 0;
-	int shortest_TO_msec = RTO + 1;
-	int timeleft;
-	if(window1.sent == 1 && window1.ack == 0){//For all awaiting a return
-		timeleft = timeout_remaining(window1.timesent_tv);
-		if(timeleft <= 0){
-			retransmit(&window1);
-			timeleft = RTO;
-		}
-		if (timeleft < shortest_TO_msec)
-			shortest_TO_msec = timeleft;
-	}
-
-	if(shortest_TO_msec < RTO + 1) global_timeout = shortest_TO_msec;
-	// printf("seq: %d, elapsed_msec: %d\n", window[to_iter].packet.seq_num, elapsed_msec);
-}*/
 
 //Handles resending
 void check_timeout(){

@@ -57,7 +57,6 @@ struct WindowFrame {
 	struct Packet packet;
 	int sent;
 	int ack;
-	int timeout;
 	struct timeval timesent_tv;
 };
 
@@ -98,18 +97,12 @@ unsigned short send_packet(struct WindowFrame* frame, char* input, unsigned shor
 		frame->packet = tr_packet;
 		frame->sent = 1;
 		frame->ack = 0;
-		frame->timeout = 0;
 		gettimeofday(&(frame->timesent_tv),NULL);
-		//frame->timesent_tv;
 	}
 	return datalen+sizeof(tr_packet);
 }
 
 void retransmit(struct WindowFrame* frame){
-	/*char buf[MAX_PACKET_LENGTH];
-	memset(buf, 0, MAX_PACKET_LENGTH);
-	memcpy(buf,(void*) &frame->packet, MAX_PACKET_LENGTH);*/
-	
 	printf("Sending packet %d %d", frame->packet.seq_num, WINDOW_SIZE_BYTES);
 	if(SYN & frame->packet.flags) printf(" SYN");
 	else if(FIN & frame->packet.flags) printf(" FIN");
@@ -135,11 +128,7 @@ void init_file_transfer(){
 			num_frames = num_frames + 1;
 		}
 		// once window is full, break
-	}/*
-	int test = 0;
-	for (; test < 5; test = test +1 ) {
-		printf("frame %d seq: %d\n", test, window[test].packet.seq_num);
-	}*/
+	}
 }
 
 void file_transfer(unsigned short acknum){
@@ -158,11 +147,6 @@ void file_transfer(unsigned short acknum){
 	char buf[MAX_PAYLOAD_LENGTH];
 	i = 0; //Frame we are checking
 	int j = -1; //This iterator searches for the next un-ACKed frame
-	/*int test = 0;
-	for (; test < 5; test = test +1 ) {
-		printf("frame %d seq: %d\n", test, window[test].packet.seq_num);
-	}*/
-	//printf("process\n");
 	while(i < 4) {
 		// 'remove' consecutive acked packets from the beginning of the window array 
 		// shift other frames in array
@@ -193,15 +177,10 @@ void file_transfer(unsigned short acknum){
 			else{ 
 				send_packet(&window[i], buf, sizeof(buf), global_seq, 0, 0, 0, 1, 0);
 				global_seq = global_seq + MAX_PACKET_LENGTH;
-				//num_frames = num_frames + 1;
 			}
 			i++;
 		}
 	}
-	/*int test = 0;
-	for (; test < 5; test = test +1 ) {
-		printf("frame %d seq: %d\n", test, window[test].packet.seq_num);
-	}*/
 }
 
 void empty_window(){
@@ -313,10 +292,6 @@ void respond(){
 		default:
 			break;
 	}
-	// printf("%d %d %d\n", header.ack_num, header.length, header.flags);
-	// printf("received message: %d \n%s\n", strlen(payload), payload);
-	// char* buf = "Server Acknowledged";
-	// send_packet(NULL, buf, 2002, 366, 0, 1, 0, 1);
 	refresh_timeout();
 }
 
