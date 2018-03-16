@@ -39,7 +39,6 @@ struct sockaddr_in serv_addr, cli_addr;
 socklen_t addrlen = sizeof(serv_addr);
 socklen_t cli_addrlen = sizeof(cli_addr);
 int global_seq = 20000;
-int num_frames = 0;
 
 int fd = -1;
 char filename[256] = {0}; // 255 chars max filename size
@@ -98,7 +97,7 @@ unsigned short send_packet(struct WindowFrame* frame, char* input, unsigned shor
 		frame->sent = 0;
 		frame->ack = 0;
 		frame->timeout = 0;
-		gettimeofday(&(frame->timesent_tv),NULL);
+		gettimeofday(&frame->timesent_tv,NULL);
 		//frame->timesent_tv;
 	}
 	return datalen+sizeof(tr_packet);
@@ -130,13 +129,8 @@ void init_file_transfer(){
 		else{ 
 			send_packet(&window[i], buf, sizeof(buf), global_seq, 0, 0, 0, 1, 0);
 			global_seq = global_seq + MAX_PACKET_LENGTH;
-			num_frames = num_frames + 1;
 		}
 		// once window is full, break
-	}
-	int test = 0;
-	for (; test < 5; test = test +1 ) {
-		printf("frame %d seq: %d\n", test, window[test].packet.seq_num);
 	}
 }
 
@@ -156,11 +150,6 @@ void file_transfer(unsigned short acknum){
 	char buf[MAX_PAYLOAD_LENGTH];
 	i = 0; //Frame we are checking
 	int j = -1; //This iterator searches for the next un-ACKed frame
-	int test = 0;
-	for (; test < 5; test = test +1 ) {
-		printf("frame %d seq: %d\n", test, window[test].packet.seq_num);
-	}
-	printf("process\n");
 	while(i < 4) {
 		// 'remove' consecutive acked packets from the beginning of the window array 
 		// shift other frames in array
@@ -179,10 +168,6 @@ void file_transfer(unsigned short acknum){
 			if(j >= 4) break;
 		} else i++;
 	}
-	test = 0;
-	for (; test < 5; test = test +1 ) {
-		printf("frame %d seq: %d\n", test, window[test].packet.seq_num);
-	}
 	if(j != -1){//j is set => repopulate window, starting from i
 		while(i < 4){
 			int r = read(fd,buf,MAX_PAYLOAD_LENGTH);
@@ -192,7 +177,6 @@ void file_transfer(unsigned short acknum){
 			else{ 
 				send_packet(&window[i], buf, sizeof(buf), global_seq, 0, 0, 0, 1, 0);
 				global_seq = global_seq + MAX_PACKET_LENGTH;
-				num_frames = num_frames + 1;
 			}
 			i++;
 		}
@@ -222,9 +206,8 @@ void respond(){
 					memcpy(syn_buf, (void*) &s.st_size, sizeof(s.st_size));
 				}
 				// send file size
-				// may need to add Timeout for this
-				send_packet(NULL, syn_buf, sizeof(syn_buf), global_seq, rcv_packet.seq_num, 1,finish,0,1);
-				global_seq = global_seq+MAX_PACKET_LENGTH;
+				
+				global_seq = global_seq + send_packet(NULL, syn_buf, sizeof(syn_buf), global_seq, rcv_packet.seq_num, 1,finish,0,1);
 				if(finish == 0) stateflag = 1;
 			}
 			if (rcv_packet.flags & FIN) {
@@ -257,20 +240,6 @@ void respond(){
 	// printf("received message: %d \n%s\n", strlen(payload), payload);
 	// char* buf = "Server Acknowledged";
 	// send_packet(NULL, buf, 2002, 366, 0, 1, 0, 1);
-
-	// TIMEOUT logic
-	// go thru the window calculate the shortest timeout 
-	int to_iter;
-	int shortest_TO_msec = 500;
-	for (to_iter=0; to_iter< num_frames; to_iter++) {
-		struct timeval current_time_tv;
-		gettimeofday(&current_time_tv,NULL);
-		int elapsed_msec = (current_time_tv.tv_sec - window[to_iter].timesent_tv.tv_sec)*1000
-					+ (current_time_tv.tv_usec - window[to_iter].timesent_tv.tv_usec)/1000;
-		if ((RTO - elapsed_msec) < shortest_TO_msec)
-			shortest_TO_msec = RTO - elapsed_msec;
-		// printf("seq: %d, elapsed_msec: %d\n", window[to_iter].packet.seq_num, elapsed_msec);
-	}
 
 }
 

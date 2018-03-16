@@ -205,8 +205,9 @@ int main(int argc, char *argv[])
 	send_packet(NULL, argv[3], strlen(argv[3]), 0, 0, 0, 0, 0, 1);
 	fragments = -1;
 
+
 	while(1){
-		respond();
+	respond();
 	}
     return 0;
 }
