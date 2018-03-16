@@ -1,6 +1,5 @@
 /* By Kuan Xiang Wen and Josh Camarena, Feb 2018
-   CS118 Project 1
-
+   CS118 Project 2
 */
 #include <stdio.h>
 #include <fcntl.h>
@@ -59,7 +58,7 @@ struct WindowFrame {
 	struct timeval timesent_tv;
 };
 
-struct WindowFrame window[5];
+struct WindowFrame window[5] = {0};
 
 struct AwaitACK {
 	char buf[MAX_PACKET_LENGTH];

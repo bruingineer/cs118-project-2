@@ -1,22 +1,12 @@
 /* By Kuan Xiang Wen and Josh Camarena, Feb 2018
-   CS118 Project 1
-   
-   Running this program starts a webserver. It is non-persistent – the server only handles a single HTTP request and then returns. 
-   We have also provided “index.html” and “404.html” to handle the default and File DNE cases.
-   The server awaits a HTTP GET request, and returns a single HTTP response. 
-   To request a file from the server, type “(IP ADDRESS):(PORT NO.)/(FILENAME)” into an up-to-date Firefox browser. 
-   It can return the following filetypes: htm/html, jpg/jpeg file, gif file. 
-   If the filename is nonempty but has does not have any of the above filetypes, it returns a binary file that prompts a download. 
-   If the field is empty, it looks to download “index.html”. 
-   If the file is not found, it returns “404.html with a 404 error”.
-   After it serves a request, the server closes all sockets and returns/shuts down. 
-   To retrieve another file, the server binary should be run again.
+   CS118 Project 2
 */
 #include <stdio.h>
 #include <fcntl.h>
 #include <sys/types.h>   // definitions of a number of data types used in socket.h and netinet/in.h
 #include <sys/socket.h>  // definitions of structures needed for sockets, e.g. sockaddr
 #include <netinet/in.h>  // constants and structures needed for internet domain addresses, e.g. sockaddr_in
+#include <netdb.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,9 +38,10 @@ int sockfd, portno;
 struct sockaddr_in serv_addr, cli_addr;
 socklen_t addrlen = sizeof(serv_addr);
 socklen_t cli_addrlen = sizeof(cli_addr);
+int global_seq = 20000;
+
 int fd = -1;
 char filename[256] = {0}; // 255 chars max filename size
-int global_seq = 20000;
 
 struct Packet {
     unsigned short seq_num;
@@ -159,6 +150,27 @@ void send_file(){
 	read(fd, wrbuf, MAX_PAYLOAD_LENGTH);
 }
 
+// grabs next MAX PAYLOAD SIZE bytes from the file to be sent
+// inits the frame pointed to by frame
+// returns the data length
+int next_file_window_frame(struct WindowFrame* frame) {
+	int r = read(fd,frame->packet.payload,MAX_PAYLOAD_LENGTH);
+	frame->packet.length = r;
+	frame->packet.seq_num = global_seq;
+	global_seq = global_seq + 1024;
+	frame->packet.flags = 0;
+	frame->sent = 0;
+	frame->ack = 0;
+	frame->timeout = 0;
+	//frame->timesent_tv;
+
+	if (r == 0) {
+		// do something for when done reading
+		frame->packet.flags = FIN;
+	}
+	return frame->packet.length;
+}
+
 //Primary event loop
 char in_buf[MAX_PACKET_LENGTH]; //Buffer 
 struct Packet rcv_packet;
@@ -167,14 +179,26 @@ void respond(){
 	//char payload[MAX_PACKET_LENGTH] = {0};
 	get_packet(in_buf, &rcv_packet);
 
+	// rcv processing
 	if (rcv_packet.flags & SYN) {
-		int finish = 0;
 		if (rcv_packet.flags & ACK) {
+			// initialize up to the first 5 packets to fill the window
+			int i;
+			for(i=0; i < 5; i=i+1) {
+
+				if (next_file_window_frame(window + i) == 0) {
+					// do something for when done reading
+					break;
+				}
+				// once window is full, break
+			}
 		} else {
 			strncpy(filename, rcv_packet.payload, 256);
+			// if 404, set fin to 1
+			int finish = 0;
 			if ((fd = open(filename, O_RDONLY)) < 0)
 				finish = 1;
-		
+			// syn handshake
 			char* syn_buf = "syn";
 			send_packet(NULL, syn_buf, global_seq, rcv_packet.seq_num, 0,finish,0,1);
 			global_seq = global_seq+MAX_PACKET_LENGTH;
@@ -192,8 +216,16 @@ void respond(){
 			// probably never
 		}
 		if (rcv_packet.flags & ACK) {
-			
+				
 		}
+
+		// process window here
+		// check if any packets can be saved in order and move the window up
+		// then fill window with next payloads from 
+		// read(fd, window[frame].packet.payload, MAX_PAYLOAD_LENGTH)
+		// check for unsent packets in window, send them and log the time in timesent_tv
+		// check for timeouts 
+
 	}
 
 /*
