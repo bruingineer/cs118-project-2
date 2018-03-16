@@ -74,20 +74,18 @@ int get_packet(char* in_buf, struct Packet* rcv_packet) {
 void send_packet(struct WindowFrame* frame, char* input, unsigned short seq, unsigned short acknum, 
 				 unsigned char ackflag, unsigned char finflag, unsigned char fragflag, unsigned char synflag){
 	
-	unsigned short datalen = 0;
-	if(input != NULL) datalen = strlen(input);
-	else datalen = 0;
-
+	unsigned short datalen = strlen(input);
+	if(datalen > (MAX_PAYLOAD_LENGTH)) error("Packet too large");
 	struct Packet tr_packet = {
 		.seq_num = seq,
 		.ack_num = acknum,
 		.length = datalen,
 		.flags = ACK*ackflag | FIN*finflag | FRAG*fragflag | SYN*synflag
 	};
-	if(input != NULL) memcpy(tr_packet.payload, input, datalen);
-	else memset(tr_packet.payload, 0, MAX_PAYLOAD_LENGTH);
+	memcpy(tr_packet.payload, input, datalen);
 	
 	printf("Sending packet %d %d", seq, WINDOW_SIZE_BYTES);
+
 	if(synflag) printf(" SYN");
 	else if(finflag) printf(" FIN");
 	printf("\n");
@@ -215,6 +213,7 @@ void respond(){
 	memset(in_buf, 0, MAX_PACKET_LENGTH);  // reset memory
 	//char payload[MAX_PACKET_LENGTH] = {0};
 	get_packet(in_buf, &rcv_packet);
+		
 	switch(stateflag){
 		case 0://Awaiting SYN
 			if (rcv_packet.flags & SYN) {
@@ -260,7 +259,6 @@ void respond(){
 		default:
 			break;
 	}
-
 	// printf("%d %d %d\n", header.ack_num, header.length, header.flags);
 	// printf("received message: %d \n%s\n", strlen(payload), payload);
 	// char* buf = "Server Acknowledged";
@@ -274,7 +272,7 @@ int main(int argc, char *argv[])
 {//Socket connection as provided by sample code
 
     if (argc < 2) {
-        fprintf(stderr,"ERROR, no port provided\n");
+        error("ERROR, no port provided");
         exit(1);
     }
 
@@ -282,34 +280,30 @@ int main(int argc, char *argv[])
     if (sockfd < 0)
         error("ERROR opening socket");
     
-	
     // fill in address info
 	memset((char *) &serv_addr, 0, sizeof(serv_addr));   // reset memory
     portno = atoi(argv[1]);
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(portno);
-	
+
 	fd = open("test.jpg", O_RDONLY);
-	stateflag = 1;
+	stateflag = 0;
     if (bind(sockfd, (struct sockaddr *) &serv_addr, addrlen) < 0)
         error("ERROR on binding");
+
     struct pollfd fds[] = {
 		{sockfd, POLLIN}
     };
     int r = 0;
     while(1){
-		
-		
     	// use poll to detect when data is ready to be read from socket
-		if(recvfrom(sockfd, in_buf, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &cli_addr, &cli_addrlen) > 0) printf("get");
     	r = poll(fds,1,0);
 		if (r < 0) {
 			// poll error
 			error("error in poll\n");
 		}
 		else if (fds[0].revents & POLLIN) {
-			printf("something");
 			respond();
 		}
     }
