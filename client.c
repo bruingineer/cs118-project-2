@@ -42,6 +42,7 @@ socklen_t addrlen;
 // sequence # doesn't matter in client
 int global_seq = 10000;
 int rcv_data; // fd receive file
+char* filebuf;
 
 struct Packet {
     unsigned short seq_num;
@@ -59,44 +60,32 @@ struct WindowFrame {
 	struct timeval timesent_tv;
 };
 
-struct WindowFrame window[5] = {0};
-
 int get_packet(char* in_buf, struct Packet* rcv_packet) {
 	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &serv_addr, &addrlen);
 	if(recvlen > 0){
-
 		printf("Receiving packet %d\n", rcv_packet->seq_num);
-		
 		return 1;
 	}
 	return 0;
 }
 
 //Add pointer to AwaitACK field if an ACK is expected. Else, input NULL.
-void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq, unsigned short acknum, 
+void send_packet(struct WindowFrame* frame, char* input, unsigned short seq, unsigned short acknum, 
 				 unsigned char ackflag, unsigned char finflag, unsigned char fragflag, unsigned char synflag){
 	
-	char buf[MAX_PACKET_LENGTH] = {0};
-	//memset(buf, 0, MAX_PACKET_LENGTH);
-	unsigned short datalen = strlen(input);
-	/*
-	struct PacketHeader header;
+	unsigned short datalen = 0;
+	if(input != NULL) datalen = strlen(input);
+	else datalen = 0;
 
-	if(datalen > (MAX_PAYLOAD_LENGTH)) error("Packet too large");
-	header.seq_num = seq;
-	header.ack_num = acknum;
-	header.length = datalen;
-	header.flags = ACK*ackflag | FIN*finflag | FRAG*fragflag | SYN*synflag;
-	memcpy(buf,(void*) &header, HEADER_LENGTH);
-	memcpy(buf + HEADER_LENGTH, input, datalen);
-	*/
 	struct Packet tr_packet = {
 		.seq_num = seq,
 		.ack_num = acknum,
 		.length = datalen,
 		.flags = ACK*ackflag | FIN*finflag | FRAG*fragflag | SYN*synflag
 	};
-	memcpy(tr_packet.payload, input, datalen);
+	if(input != NULL) memcpy(tr_packet.payload, input, datalen);
+	else memset(tr_packet.payload, 0, MAX_PAYLOAD_LENGTH);
+	
 
 	//printf("Sending packet %d %d", seq, WINDOW_SIZE_BYTES);
 	// client prints
@@ -107,36 +96,33 @@ void send_packet(struct AwaitACK* await_packet, char* input, unsigned short seq,
 	
 	if(sendto(sockfd, &tr_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
 		error("ERROR in sendto");
-/*
-	if(await_packet != NULL){
-		memset(await_packet->buf, 0, MAX_PACKET_LENGTH);
-		memcpy(await_packet->buf, buf, HEADER_LENGTH + datalen);
-		memset((void*) &await_packet->header, 0, HEADER_LENGTH);
-		memcpy((void*) &await_packet->header, (void*) &header, HEADER_LENGTH);
-		await_packet->timeout = 1;
+	if(frame != NULL){
+		frame->packet = tr_packet;
+		frame->sent = 0;
+		frame->ack = 0;
+		frame->timeout = 0;
+		gettimeofday(&frame->timesent_tv,NULL);
+		//frame->timesent_tv;
 	}
-*/
-
 }
 
-/***
-void retransmit(struct AwaitACK* await_packet){
+void retransmit(struct WindowFrame* frame){
 	char buf[MAX_PACKET_LENGTH];
 	memset(buf, 0, MAX_PACKET_LENGTH);
-	memcpy(buf,(void*) &await_packet->header, HEADER_LENGTH);
-	memcpy(buf + HEADER_LENGTH, await_packet->buf, await_packet->header.length);
+	memcpy(buf,(void*) &frame->packet, MAX_PACKET_LENGTH);
 	
-	printf("Sending packet %d %d", await_packet->header.seq_num, WINDOW_SIZE_BYTES);
-	if(SYN & await_packet->header.flags) printf(" SYN");
-	else if(FIN & await_packet->header.flags) printf(" FIN");
+	printf("Sending packet %d %d", frame->packet.ack_num, WINDOW_SIZE_BYTES);
+	if(SYN & frame->packet.flags) printf(" SYN");
+	else if(FIN & frame->packet.flags) printf(" FIN");
 	printf(" Retransmission\n");
 	
-	if(sendto(sockfd,buf, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
+	if(sendto(sockfd, buf, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
 	error("ERROR in sendto");
 }
-***/
 
 //Primary event loop
+int fragments;
+int* fragment_track;
 char in_buf[MAX_PACKET_LENGTH]; //Buffer for HTTP GET input
 struct Packet rcv_packet;
 void respond(){
@@ -144,25 +130,33 @@ void respond(){
 	//char payload[MAX_PACKET_LENGTH] = {0};
 	get_packet(in_buf, &rcv_packet);
 
-	if (rcv_packet.flags & SYN) {
+	if (rcv_packet.flags & SYN && rcv_packet.flags & ACK) {
 		char* synbuf = "syn ack";
 		// only send syn ack then break
 		if (rcv_packet.flags & FIN) {
 			printf("404 file not found\n");
-			send_packet(NULL, "", global_seq, rcv_packet.seq_num, 1,1,0,0);
-			global_seq = global_seq+MAX_PACKET_LENGTH;
+			send_packet(NULL, "", 0, rcv_packet.seq_num, 1,1,0,0);
+			//global_seq = global_seq+MAX_PACKET_LENGTH;
 			close(sockfd);
 			exit(1);
 		}
-		send_packet(NULL, synbuf, global_seq, rcv_packet.seq_num, 1,0,0,1);
-		global_seq = global_seq+MAX_PACKET_LENGTH;
-
+		long int st_size;
+		memset((void*) &st_size, 0, sizeof(st_size));
+		memcpy((void*) &st_size, rcv_packet.payload, sizeof(st_size));
+		filebuf = (char*) malloc(st_size * sizeof(char));
+		fragments = (st_size / MAX_PAYLOAD_LENGTH) + 1;
+		send_packet(NULL, synbuf, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
+		
 	} else {
 		if (rcv_packet.flags & FIN) {
-
+			close(sockfd);
+			exit(0);
 		}
 		if (rcv_packet.flags & FRAG) {
-
+			fragments--;
+			if(fragments == 0){
+				send_packet(NULL, NULL, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 0,1,0,0);
+			}
 		}
 		if (rcv_packet.flags & ACK) {
 		
@@ -180,13 +174,14 @@ int main(int argc, char *argv[])
 {//Socket connection as provided by sample code
 
 
-    if (argc < 3) {
+    if (argc < 4) {
         fprintf(stderr,"ERROR, no port provided\n");
         exit(1);
     }
 	
 	hostname = argv[1];
 	portno = atoi(argv[2]);
+	//char* buf = argv[3];
 	rcv_data = creat("receive.data", O_WRONLY);
 	
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);  // create socket
@@ -218,6 +213,7 @@ int main(int argc, char *argv[])
 	
 	send_packet(NULL, buf, global_seq, 0, 0, 0, 0, 1);
 	global_seq = global_seq+MAX_PACKET_LENGTH;
+	fragments = 0;
 
 	while(1){
 		respond();

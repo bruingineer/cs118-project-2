@@ -64,31 +64,28 @@ struct WindowFrame window[5] = {0};
 int get_packet(char* in_buf, struct Packet* rcv_packet) {
 	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &cli_addr, &cli_addrlen);
 	if(recvlen > 0){
-
-		printf("Receiving packet %d\n", rcv_packet->ack_num);
-		
+		if(rcv_packet->ack_num > 0) printf("Receiving packet %d\n", rcv_packet->ack_num);
 		return 1;
 	}
 	return 0;
 }
 
-//Add pointer to AwaitACK field if an ACK is expected. Else, input NULL.
+//Add pointer to frame field if an ACK is expected. Else, input NULL.
 void send_packet(struct WindowFrame* frame, char* input, unsigned short seq, unsigned short acknum, 
 				 unsigned char ackflag, unsigned char finflag, unsigned char fragflag, unsigned char synflag){
 	
-	char buf[MAX_PACKET_LENGTH] = {0};
-	// memset(buf, 0, MAX_PACKET_LENGTH);
-	unsigned short datalen = strlen(input);
-	if(datalen > (MAX_PAYLOAD_LENGTH)) error("Packet too large");
+	unsigned short datalen = 0;
+	if(input != NULL) datalen = strlen(input);
+	else datalen = 0;
+
 	struct Packet tr_packet = {
 		.seq_num = seq,
 		.ack_num = acknum,
 		.length = datalen,
 		.flags = ACK*ackflag | FIN*finflag | FRAG*fragflag | SYN*synflag
 	};
-	memcpy(tr_packet.payload, input, datalen);
-	// memcpy(buf,(void*) &header, HEADER_LENGTH);
-	// memcpy(buf + HEADER_LENGTH, input, datalen);
+	if(input != NULL) memcpy(tr_packet.payload, input, datalen);
+	else memset(tr_packet.payload, 0, MAX_PAYLOAD_LENGTH);
 	
 	printf("Sending packet %d %d", seq, WINDOW_SIZE_BYTES);
 	if(synflag) printf(" SYN");
@@ -106,38 +103,28 @@ void send_packet(struct WindowFrame* frame, char* input, unsigned short seq, uns
 		gettimeofday(&frame->timesent_tv,NULL);
 		//frame->timesent_tv;
 	}
-
-
 }
 
-/********
-void retransmit(struct AwaitACK* await_packet){
+void retransmit(struct WindowFrame* frame){
 	char buf[MAX_PACKET_LENGTH];
 	memset(buf, 0, MAX_PACKET_LENGTH);
-	memcpy(buf,(void*) &await_packet->header, HEADER_LENGTH);
-	memcpy(buf + HEADER_LENGTH, await_packet->buf, await_packet->header.length);
+	memcpy(buf,(void*) &frame->packet, MAX_PACKET_LENGTH);
 	
-	printf("Sending packet %d %d", await_packet->header.seq_num, WINDOW_SIZE_BYTES);
-	if(SYN & await_packet->header.flags) printf(" SYN");
-	else if(FIN & await_packet->header.flags) printf(" FIN");
+	printf("Sending packet %d %d", frame->packet.seq_num, WINDOW_SIZE_BYTES);
+	if(SYN & frame->packet.flags) printf(" SYN");
+	else if(FIN & frame->packet.flags) printf(" FIN");
 	printf(" Retransmission\n");
 	
 	if(sendto(sockfd,buf, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&cli_addr,cli_addrlen) < 0)
 	error("ERROR in sendto");
 }
-*******/
-
-void send_file(){
-	char wrbuf[MAX_PAYLOAD_LENGTH];
-	read(fd, wrbuf, MAX_PAYLOAD_LENGTH);
-}
 
 // grabs next MAX PAYLOAD SIZE bytes from the file to be sent
 // inits the frame pointed to by frame
 // returns the data length 
-
+/*
 int next_file_window_frame(struct WindowFrame* frame) {
-	int r = read(fd,frame->packet.payload,MAX_PAYLOAD_LENGTH);
+	
 	frame->packet.length = r;
 	frame->packet.seq_num = global_seq;
 	global_seq = global_seq + 1024;
@@ -145,101 +132,134 @@ int next_file_window_frame(struct WindowFrame* frame) {
 	frame->sent = 0;
 	frame->ack = 0;
 	frame->timeout = 0;
+	send_packet(NULL, buf, 2002, 366, 0, 1, 0, 1);
 	//frame->timesent_tv;
+}*/
 
-	if (r == 0) {
-		// do something for when done reading
-		frame->packet.flags = FIN;
+void init_file_transfer(){
+	int i;
+	char buf[MAX_PAYLOAD_LENGTH];
+	for(i=0; i < 5; i=i+1) {
+		// reads next part of file and puts it in window
+		
+		int r = read(fd,buf,MAX_PAYLOAD_LENGTH);
+		if (r == 0) {
+			send_packet(&window[i], buf, global_seq, 0, 0, 0, 0, 0);
+			global_seq = global_seq + 1024;
+			break; //File is completely transmitted!
+		}
+		else{ 
+			send_packet(&window[i], buf, global_seq, 0, 0, 0, 1, 0);
+			global_seq = global_seq + 1024;
+		}
+		// once window is full, break
 	}
-	return frame->packet.length;
 }
 
+void file_transfer(unsigned short acknum){
+	// process window here
+	// check if any packets can be saved in order and move the window up
+	// then fill window with next payloads from next_file_window_frame
+	int i;
+	for(i = 0; i < 4; i++){
+		if(acknum == window[i].packet.seq_num - MAX_PACKET_LENGTH){
+			window[i].ack = 1;
+			break;
+		}
+	}
+	if(i == 5) return;//Probably repeated ACK
+	
+	char buf[MAX_PAYLOAD_LENGTH];
+	i = 0; //Frame we are checking
+	int j = -1; //This iterator searches for the next un-ACKed frame
+	while(i < 4) {
+		// 'remove' consecutive acked packets from the beginning of the window array 
+		// shift other frames in array
+		// yes i know this would be 'better' implemented as a queue with pointers
+		// where elements don't have to be shifted in an array
+		if (window[i].ack) {
+			j = i + 1;//Start this iterator
+			while(j < 4){
+				if(!window[j].ack){
+					window[i] = window[j];
+					i++;
+					j++;
+				}
+				else j++;
+			}
+			if(j >= 4) break;
+		} else i++;
+	}
+	if(j != -1){//j is set => repopulate window, starting from i
+		while(i < 4){
+			int r = read(fd,buf,MAX_PAYLOAD_LENGTH);
+			if (r == 0) {
+				send_packet(&window[i], buf, global_seq, 0, 0, 0, 0, 0);
+				global_seq = global_seq + 1024;
+				break; //File is completely transmitted!
+			}
+			else{ 
+				send_packet(&window[i], buf, global_seq, 0, 0, 0, 1, 0);
+				global_seq = global_seq + 1024;
+			}
+			i++;
+		}
+	}
+}
 
 //Primary event loop
-char in_buf[MAX_PACKET_LENGTH]; //Buffer 
+char in_buf[MAX_PACKET_LENGTH]; //Buffer
+int stateflag;
 struct Packet rcv_packet;
 void respond(){
 	memset(in_buf, 0, MAX_PACKET_LENGTH);  // reset memory
 	//char payload[MAX_PACKET_LENGTH] = {0};
 	get_packet(in_buf, &rcv_packet);
-
-	// rcv processing
-	if (rcv_packet.flags & SYN) {
-		if (rcv_packet.flags & ACK) {
-			// initialize up to the first 5 packets to fill the window
-			int i;
-			for(i=0; i < 5; i=i+1) {
-
-				// reads next part of file and puts it in window
-				if (next_file_window_frame(window + i) == 0) {
-					// do something for when done reading
-					break;
-				}
-				// once window is full, break
-			}
-		} else {
-			strncpy(filename, rcv_packet.payload, 256);
-			// if 404, set fin to 1
-			int finish = 0;
-			if ((fd = open(filename, O_RDONLY)) < 0)
-				finish = 1;
-			// syn handshake
-			char* syn_buf = "syn";
-			send_packet(NULL, syn_buf, global_seq, rcv_packet.seq_num, 0,finish,0,1);
-			global_seq = global_seq+MAX_PACKET_LENGTH;
-		}
-	} else {
-		if (rcv_packet.flags & FIN) {
-			// stuff
-
-			if (rcv_packet.flags & ACK) {
-				close(sockfd);
-				exit(1);
-			}
-		}
-		if (rcv_packet.flags & FRAG) {
-			// probably never
-		}
-		if (rcv_packet.flags & ACK) {
+	switch(stateflag){
+		case 0://Awaiting SYN
+			if (rcv_packet.flags & SYN) {
+				char syn_buf[MAX_PAYLOAD_LENGTH];
+				memset(syn_buf, 0, MAX_PAYLOAD_LENGTH);
+				strncpy(filename, rcv_packet.payload, 256);
 				
-		}
-
-		// process window here
-		// check if any packets can be saved in order and move the window up
-		// then fill window with next payloads from next_file_window_frame
-		int i; 
-		for (i = 0; i < 5; i = i+1) {
-			struct WindowFrame* currentFrame = (window + i);
-			// 'remove' consecutive acked packets from the beginning of the window array 
-			// shift other frames in array
-			// yes i know this would be 'better' implemented as a queue with pointers
-			// where elements don't have to be shifted in an array
-			if (currentFrame->ack) {
-				if (i != 4)
-					*currentFrame = window[i + 1];
-				int bytes_read = next_file_window_frame(window + 4);
-				if(bytes_read == 0) {
-					// fin flag set in next window func
-					break;
+				int finish = 0;// if 404, set fin to 1
+				if ((fd = open(filename, O_RDONLY)) < 0) finish = 1;
+				else{
+					struct stat s; //Declare struct
+					if (fstat(fd,&s) < 0){ //Attempt to use fstat()
+						 error("fstat() failed");
+					}
+					memcpy(syn_buf, (void*) &s.st_size, sizeof(s.st_size));
 				}
+				// send file size
+				
+				send_packet(NULL, syn_buf, global_seq, rcv_packet.seq_num, 1,finish,0,1);
+				global_seq = global_seq+MAX_PACKET_LENGTH;
+				stateflag = 1;
 			}
-		}
-
-
-		// check for unsent packets in window, send them and log the time in timesent_tv
-		// check for timeouts 
-
+			break;
+		case 1://Awaiting client handshake ACK - ensures data is allocated
+			if (rcv_packet.flags & ACK) {
+				init_file_transfer();
+				stateflag = 2;
+			}
+			break;
+		case 2://File transfer
+			if (rcv_packet.flags & ACK) {
+				file_transfer(rcv_packet.ack_num);
+			} else if (rcv_packet.flags & FIN) {
+				char fin_buf[MAX_PAYLOAD_LENGTH];
+				memset(fin_buf, 0, MAX_PAYLOAD_LENGTH);
+				send_packet(NULL, fin_buf, global_seq, rcv_packet.seq_num, 0,1,0,0);
+				close(sockfd);
+				exit(0);
+			}
+			break;
+		case 3://Await client timeout FINACK in case
+			break;
+		default:
+			break;
 	}
-
-/*
-struct WindowFrame {
-	struct Packet packet;
-	int sent;
-	int ack;
-	int timeout;
-	struct timeval timesent_tv;
-};
-*/
 
 	// printf("%d %d %d\n", header.ack_num, header.length, header.flags);
 	// printf("received message: %d \n%s\n", strlen(payload), payload);
@@ -271,10 +291,9 @@ int main(int argc, char *argv[])
     serv_addr.sin_port = htons(portno);
 	
 	fd = open("test.jpg", O_RDONLY);
-	
+	stateflag = 1;
     if (bind(sockfd, (struct sockaddr *) &serv_addr, addrlen) < 0)
         error("ERROR on binding");
-
     struct pollfd fds[] = {
 		{sockfd, POLLIN}
     };
