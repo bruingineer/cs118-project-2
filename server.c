@@ -62,7 +62,7 @@ struct WindowFrame {
 
 struct WindowFrame window[5] = {0};
 
-int get_packet(char* in_buf, struct Packet* rcv_packet) {
+int get_packet(struct Packet* rcv_packet) {
 	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &cli_addr, &cli_addrlen);
 	if(recvlen > 0){
 		if(rcv_packet->ack_num > 0) printf("Receiving packet %d\n", rcv_packet->ack_num);
@@ -72,18 +72,17 @@ int get_packet(char* in_buf, struct Packet* rcv_packet) {
 }
 
 //Add pointer to frame field if an ACK is expected. Else, input NULL.
-void send_packet(struct WindowFrame* frame, char* input, unsigned short seq, unsigned short acknum, 
+void send_packet(struct WindowFrame* frame, char* input, unsigned short datalen, unsigned short seq, unsigned short acknum, 
 				 unsigned char ackflag, unsigned char finflag, unsigned char fragflag, unsigned char synflag){
 	
-	unsigned short datalen = strlen(input);
-	if(datalen > (MAX_PAYLOAD_LENGTH)) error("Packet too large");
 	struct Packet tr_packet = {
 		.seq_num = seq,
 		.ack_num = acknum,
 		.length = datalen,
 		.flags = ACK*ackflag | FIN*finflag | FRAG*fragflag | SYN*synflag
 	};
-	memcpy(tr_packet.payload, input, datalen);
+	if(input != NULL) memcpy(tr_packet.payload, input, datalen);
+	else memset(tr_packet.payload, 0, MAX_PAYLOAD_LENGTH);
 	
 	printf("Sending packet %d %d", seq, WINDOW_SIZE_BYTES);
 
@@ -91,7 +90,7 @@ void send_packet(struct WindowFrame* frame, char* input, unsigned short seq, uns
 	else if(finflag) printf(" FIN");
 	printf("\n");
 	
-	if(sendto(sockfd, &tr_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr *)&cli_addr,cli_addrlen) < 0)
+	if(sendto(sockfd, &tr_packet, datalen+sizeof(tr_packet), 0, (struct sockaddr *)&cli_addr,cli_addrlen) < 0)
 		error("ERROR in sendto");
 
 	if(frame != NULL){
@@ -145,7 +144,7 @@ void init_file_transfer(){
 			break; //File is completely transmitted!
 		}
 		else{ 
-			send_packet(&window[i], buf, global_seq, 0, 0, 0, 1, 0);
+			send_packet(&window[i], buf, sizeof(buf), global_seq, 0, 0, 0, 1, 0);
 			global_seq = global_seq + 1024;
 			num_frames = num_frames + 1;
 		}
@@ -207,7 +206,7 @@ void file_transfer(unsigned short acknum){
 				break; //File is completely transmitted!
 			}
 			else{ 
-				send_packet(&window[i], buf, global_seq, 0, 0, 0, 1, 0);
+				send_packet(&window[i], buf, sizeof(buf), global_seq, 0, 0, 0, 1, 0);
 				global_seq = global_seq + 1024;
 				num_frames = num_frames + 1;
 			}
@@ -217,13 +216,10 @@ void file_transfer(unsigned short acknum){
 }
 
 //Primary event loop
-char in_buf[MAX_PACKET_LENGTH]; //Buffer
 int stateflag;
 struct Packet rcv_packet;
 void respond(){
-	memset(in_buf, 0, MAX_PACKET_LENGTH);  // reset memory
-	//char payload[MAX_PACKET_LENGTH] = {0};
-	get_packet(in_buf, &rcv_packet);
+	get_packet(&rcv_packet);
 		
 	switch(stateflag){
 		case 0://Awaiting SYN
@@ -242,17 +238,16 @@ void respond(){
 					memcpy(syn_buf, (void*) &s.st_size, sizeof(s.st_size));
 				}
 				// send file size
-				
-				send_packet(&window[0], syn_buf, global_seq, rcv_packet.seq_num, 1,finish,0,1);
+				// may need to add Timeout for this
+				send_packet(NULL, syn_buf, sizeof(syn_buf), global_seq, rcv_packet.seq_num, 1,finish,0,1);
+
 				global_seq = global_seq+MAX_PACKET_LENGTH;
 				if(finish == 0) stateflag = 1;
-				if (rcv_packet.flags & FIN) {
-					char fin_buf[MAX_PAYLOAD_LENGTH];
-					memset(fin_buf, 0, MAX_PAYLOAD_LENGTH);
-					send_packet(NULL, fin_buf, global_seq, rcv_packet.seq_num, 0,1,0,0);
-					close(sockfd);
-					exit(0);
-				}
+			}
+			if (rcv_packet.flags & FIN) {
+				send_packet(NULL, NULL, 0, global_seq, rcv_packet.seq_num, 0,1,0,0);
+				close(sockfd);
+				exit(0);
 			}
 			break;
 		case 1://Awaiting client handshake ACK - ensures data is allocated
@@ -265,9 +260,7 @@ void respond(){
 			if (rcv_packet.flags & ACK) {
 				file_transfer(rcv_packet.ack_num);
 			} else if (rcv_packet.flags & FIN) {
-				char fin_buf[MAX_PAYLOAD_LENGTH];
-				memset(fin_buf, 0, MAX_PAYLOAD_LENGTH);
-				send_packet(NULL, fin_buf, global_seq, rcv_packet.seq_num, 0,1,0,0);
+				send_packet(NULL, NULL, 0, global_seq, rcv_packet.seq_num, 0,1,0,0);
 				close(sockfd);
 				exit(0);
 			}
