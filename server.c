@@ -222,6 +222,24 @@ void respond(){
 		// process window here
 		// check if any packets can be saved in order and move the window up
 		// then fill window with next payloads from 
+		int i; 
+		for (i = 0; i < 5; i = i+1) {
+			WindowFrame* currentFrame = (window + i);
+			// 'remove' consecutive acked packets from the beginning of the window array 
+			// shift other frames in array
+			// yes i know this would be 'better' implemented as a queue with pointers
+			// where elements don't have to be shifted in an array
+			if (currentFrame->ack) {
+				if (i != 4)
+					*currentFrame = window[i + 1];
+				int bytes_read = next_file_window_frame(window + 4);
+				if(bytes_read == 0) {
+					// fin flag set in next window func
+					break;
+				}
+			}
+		}
+
 		// read(fd, window[frame].packet.payload, MAX_PAYLOAD_LENGTH)
 		// check for unsent packets in window, send them and log the time in timesent_tv
 		// check for timeouts 
