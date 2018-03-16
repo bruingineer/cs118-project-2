@@ -61,7 +61,7 @@ struct WindowFrame {
 
 struct WindowFrame window[5] = {0};
 
-int get_packet(char* in_buf, struct Packet* rcv_packet) {
+int get_packet(struct Packet* rcv_packet) {
 	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &cli_addr, &cli_addrlen);
 	if(recvlen > 0){
 		if(rcv_packet->ack_num > 0) printf("Receiving packet %d\n", rcv_packet->ack_num);
@@ -200,13 +200,10 @@ void file_transfer(unsigned short acknum){
 }
 
 //Primary event loop
-char in_buf[MAX_PACKET_LENGTH]; //Buffer
 int stateflag;
 struct Packet rcv_packet;
 void respond(){
-	memset(in_buf, 0, MAX_PACKET_LENGTH);  // reset memory
-	//char payload[MAX_PACKET_LENGTH] = {0};
-	get_packet(in_buf, &rcv_packet);
+	get_packet(&rcv_packet);
 		
 	switch(stateflag){
 		case 0://Awaiting SYN

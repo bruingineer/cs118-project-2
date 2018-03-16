@@ -60,7 +60,7 @@ struct WindowFrame {
 	struct timeval timesent_tv;
 };
 
-int get_packet(char* in_buf, struct Packet* rcv_packet) {
+int get_packet(struct Packet* rcv_packet) {
 	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &serv_addr, &addrlen);
 	if(recvlen > 0){
 		printf("Receiving packet %d\n", rcv_packet->seq_num);
@@ -82,8 +82,6 @@ void send_packet(struct WindowFrame* frame, char* input, unsigned short datalen,
 	if(input != NULL) memcpy(tr_packet.payload, input, datalen);
 	else memset(tr_packet.payload, 0, MAX_PAYLOAD_LENGTH);
 
-	//printf("Sending packet %d %d", seq, WINDOW_SIZE_BYTES);
-	// client prints
 	if(synflag) printf("Sending packet SYN");
 	else {
 		printf("Sending packet %d", acknum);
@@ -122,13 +120,11 @@ int fragments;
 int* fragment_track;
 int fragbegin;
 long int filesize;
-char in_buf[MAX_PACKET_LENGTH]; //Buffer for HTTP GET input
 struct Packet rcv_packet;
 void respond(){
-	memset(in_buf, 0, MAX_PACKET_LENGTH);  // reset memory
 	//char payload[MAX_PACKET_LENGTH] = {0};
 	int recvlen;
-	if((recvlen = get_packet(in_buf, &rcv_packet)) == 0) return;
+	if((recvlen = get_packet(&rcv_packet)) == 0) return;
 
 	if (rcv_packet.flags & SYN && rcv_packet.flags & ACK) {
 		// only send syn ack then break
@@ -166,7 +162,6 @@ void respond(){
 		if (rcv_packet.flags & FRAG) {
 			int index = (rcv_packet.seq_num - fragbegin)/MAX_PACKET_LENGTH;
 			if(fragment_track[index] == 0){
-				printf("Index: %d Size: %d\n",index, rcv_packet.length);
 				memcpy(filebuf+index*MAX_PAYLOAD_LENGTH,rcv_packet.payload,rcv_packet.length);
 				fragment_track[index] = 1;
 				fragments--;
@@ -177,15 +172,8 @@ void respond(){
 			} else {
 				send_packet(NULL, NULL, 0, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
 			}
-			//TODO: Write to file buffer filebuf
 		}
 	}
-
-	// printf("%d %d %d\n", header.ack_num, header.length, header.flags);
-	// printf("received message: %d \n%s\n", strlen(payload), payload);
-	// char* buf = "Server Acknowledged";
-	// send_packet(NULL, buf, 2002, 366, 0, 1, 0, 1);
-
 }
 
 int main(int argc, char *argv[])
@@ -215,18 +203,6 @@ int main(int argc, char *argv[])
 	memcpy((void *) &serv_addr.sin_addr, server->h_addr_list[0], server->h_length);
     serv_addr.sin_port = htons(portno);
 	addrlen = sizeof(serv_addr);
-	
-	/*//Set up client as server as well. Server will discover this
-    memset((char*) &cli_addr, 0, sizeof(cli_addr));   // reset memory
-    cli_addr.sin_family = AF_INET;
-	cli_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    cli_addr.sin_port = htons(0);
-	if (bind(sockfd, (struct sockaddr *) &cli_addr, sizeof(cli_addr)) < 0)
-        error("ERROR on binding");
-	*//*
-    char buf[1024];
-	printf("Enter msg");
-	fgets(buf, 1024, stdin);*/
 	
 	send_packet(NULL, argv[3], strlen(argv[3]), global_seq, 0, 0, 0, 0, 1);
 	global_seq = global_seq+MAX_PACKET_LENGTH;
