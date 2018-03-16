@@ -125,6 +125,8 @@ void retransmit(struct WindowFrame* frame){
 //Primary event loop
 int fragments;
 int* fragment_track;
+int fragbegin;
+long int filesize;
 char in_buf[MAX_PACKET_LENGTH]; //Buffer for HTTP GET input
 struct Packet rcv_packet;
 void respond(){
@@ -142,22 +144,36 @@ void respond(){
 			close(sockfd);
 			exit(1);
 		}
-		long int st_size;
-		memset((void*) &st_size, 0, sizeof(st_size));
-		memcpy((void*) &st_size, rcv_packet.payload, sizeof(st_size));
-		filebuf = (char*) malloc(st_size * sizeof(char));
-		fragments = (st_size / MAX_PAYLOAD_LENGTH) + 1;
+		
+		//Initialize input array and trackers
+		memset((void*) &filesize, 0, sizeof(filesize));
+		memcpy((void*) &filesize, rcv_packet.payload, sizeof(filesize));
+		filebuf = (char*) malloc(filesize * sizeof(char));//The buffer itself
+		memset(filebuf, 0, filesize);
+		fragments = (filesize / MAX_PAYLOAD_LENGTH) + 1;//Number of packets needed
+		fragment_track = (int*) malloc(fragments * sizeof(int));//Keeps track where things should go
+		int i;
+		for(i = 0; i < fragments; i++) fragment_track[i] = 0;
+		fragbegin = rcv_packet.seq_num + MAX_PACKET_LENGTH;
+		//Respond
 		send_packet(NULL, synbuf, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
 		
 	} else {
 		if (rcv_packet.flags & FIN) {
+			free(filebuf);
+			free(fragment_track);
 			close(sockfd);
 			exit(0);
 		}
 		if (rcv_packet.flags & FRAG) {
-			fragments--;
+			int index = (rcv_packet.seq_num - fragbegin)/MAX_PACKET_LENGTH;
+			if(fragment_track[index] == 0){
+				memcpy(filebuf+(index*MAX_PAYLOAD_LENGTH),rcv_packet.payload,rcv_packet.length);
+				fragment_track[index] = 1;
+				fragments--;
+			}
 			if(fragments == 0){
-				//write()
+				write(rcv_data,filebuf,sizeof(filebuf));
 				send_packet(NULL, NULL, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 0,1,0,0);
 			} else {
 				send_packet(NULL, NULL, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
@@ -184,7 +200,7 @@ int main(int argc, char *argv[])
 	portno = atoi(argv[2]);
 	char* buf = argv[3];
 
-	if ((rcv_data = creat("receive.data", O_WRONLY)) < 0) {
+	if ((rcv_data = creat("receive.data", 0644)) < 0) {
 		error("Failed to open file");
 	}
 	
