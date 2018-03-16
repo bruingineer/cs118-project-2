@@ -139,11 +139,8 @@ void init_file_transfer(){
 	char buf[MAX_PAYLOAD_LENGTH];
 	for(i=0; i < 5; i=i+1) {
 		// reads next part of file and puts it in window
-		
 		int r = read(fd,buf,MAX_PAYLOAD_LENGTH);
 		if (r == 0) {
-			send_packet(&window[i], buf, global_seq, 0, 0, 0, 0, 0);
-			global_seq = global_seq + 1024;
 			break; //File is completely transmitted!
 		}
 		else{ 
@@ -192,8 +189,6 @@ void file_transfer(unsigned short acknum){
 		while(i < 4){
 			int r = read(fd,buf,MAX_PAYLOAD_LENGTH);
 			if (r == 0) {
-				send_packet(&window[i], buf, global_seq, 0, 0, 0, 0, 0);
-				global_seq = global_seq + 1024;
 				break; //File is completely transmitted!
 			}
 			else{ 
@@ -228,15 +223,20 @@ void respond(){
 					if (fstat(fd,&s) < 0){ //Attempt to use fstat()
 						 error("fstat() failed");
 					}
-					fprintf(stderr,"%d\n",s.st_size);
 					memcpy(syn_buf, (void*) &s.st_size, sizeof(s.st_size));
 				}
-				fprintf(stderr,"%s\n",filename);
 				// send file size
 				
 				send_packet(NULL, syn_buf, global_seq, rcv_packet.seq_num, 1,finish,0,1);
 				global_seq = global_seq+MAX_PACKET_LENGTH;
-				stateflag = 1;
+				if(finish == 0) stateflag = 1;
+				if (rcv_packet.flags & FIN) {
+					char fin_buf[MAX_PAYLOAD_LENGTH];
+					memset(fin_buf, 0, MAX_PAYLOAD_LENGTH);
+					send_packet(NULL, fin_buf, global_seq, rcv_packet.seq_num, 0,1,0,0);
+					close(sockfd);
+					exit(0);
+				}
 			}
 			break;
 		case 1://Awaiting client handshake ACK - ensures data is allocated
@@ -289,7 +289,6 @@ int main(int argc, char *argv[])
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(portno);
 
-	fd = open("test.jpg", O_RDONLY);
 	stateflag = 0;
     if (bind(sockfd, (struct sockaddr *) &serv_addr, addrlen) < 0)
         error("ERROR on binding");

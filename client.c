@@ -91,7 +91,7 @@ void send_packet(struct WindowFrame* frame, char* input, unsigned short seq, uns
 	// client prints
 	if(synflag) printf("Sending packet SYN");
 	else {
-		printf("Sending packet %d", seq);
+		printf("Sending packet %d", acknum);
 		if(finflag) printf(" FIN");
 	}
 	printf("\n");
@@ -148,7 +148,6 @@ void respond(){
 		filebuf = (char*) malloc(st_size * sizeof(char));
 		fragments = (st_size / MAX_PAYLOAD_LENGTH) + 1;
 		send_packet(NULL, synbuf, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
-		printf("fragments: %d %d\n",st_size,fragments);
 		
 	} else {
 		if (rcv_packet.flags & FIN) {
@@ -159,11 +158,10 @@ void respond(){
 			fragments--;
 			if(fragments == 0){
 				send_packet(NULL, NULL, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 0,1,0,0);
+			} else {
+				send_packet(NULL, NULL, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
 			}
 			//TODO: Write to file buffer filebuf
-		}
-		if (rcv_packet.flags & ACK) {
-		
 		}
 	}
 
@@ -176,8 +174,6 @@ void respond(){
 
 int main(int argc, char *argv[])
 {//Socket connection as provided by sample code
-
-
     if (argc < 4) {
         fprintf(stderr,"ERROR, no port provided\n");
         exit(1);
@@ -185,7 +181,7 @@ int main(int argc, char *argv[])
 	
 	hostname = argv[1];
 	portno = atoi(argv[2]);
-	//char* buf = argv[3];
+	char* buf = argv[3];
 	rcv_data = creat("receive.data", O_WRONLY);
 	
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);  // create socket
@@ -213,7 +209,6 @@ int main(int argc, char *argv[])
     char buf[1024];
 	printf("Enter msg");
 	fgets(buf, 1024, stdin);*/
-	char* buf = "test.jpg";
 	
 	send_packet(NULL, buf, global_seq, 0, 0, 0, 0, 1);
 	global_seq = global_seq+MAX_PACKET_LENGTH;
