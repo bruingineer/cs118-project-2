@@ -200,7 +200,7 @@ int main(int argc, char *argv[])
 	portno = atoi(argv[2]);
 	char* buf = argv[3];
 
-	if ((rcv_data = creat("receive.data", 0644)) < 0) {
+	if ((rcv_data = open("receive.data", O_CREAT | O_WRONLY | O_TRUNC, 0644)) < 0) {
 		error("Failed to open file");
 	}
 	
