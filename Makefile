@@ -22,10 +22,11 @@ nodrop:
 lossdrop:
 	tc qdisc change dev lo root netem loss 20% delay 100ms
 reorderdrop:
-	tc qdisc change dev lo root netem gap 5 delay 100ms
+	tc qdisc change dev lo root netem gap 5 delay 100ms reorder 100%
 dropall:
-	tc qdisc change dev lo root netem loss 20% gap 5 delay 100ms
-
+	tc qdisc change dev lo root netem loss 20% gap 5 delay 100ms reorder 100%
+dropsevere:
+	tc qdisc change dev lo root netem loss 60% gap 5 delay 300ms reorder 100%
 clean:
 	rm -rf *.o *~ *.gch *.swp *.dSYM server  *.tar.gz ./server ./client
 
