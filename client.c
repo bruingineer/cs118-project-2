@@ -233,9 +233,11 @@ int main(int argc, char *argv[])
 	send_packet(NULL, buf, global_seq, 0, 0, 0, 0, 1);
 	global_seq = global_seq+MAX_PACKET_LENGTH;
 	fragments = 0;
+	// sleep(10);
+	// send_packet(NULL, buf, global_seq+2024, 0, 0, 0, 0, 0);
 
 	while(1){
-		respond();
+	respond();
 	}
     return 0;
 }
