@@ -51,6 +51,7 @@ struct Packet {
     char payload[MAX_PAYLOAD_LENGTH];
 };
 
+int global_timeout;
 struct WindowFrame {
 	struct Packet packet;
 	int sent;
@@ -58,6 +59,8 @@ struct WindowFrame {
 	int timeout;
 	struct timeval timesent_tv;
 };
+//Client only has at most 1 packet awaiting to be ACKed
+struct WindowFrame window1;
 
 int get_packet(struct Packet* rcv_packet) {
 	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &serv_addr, &addrlen);
@@ -92,7 +95,7 @@ unsigned short send_packet(struct WindowFrame* frame, char* input, unsigned shor
 		error("ERROR in sendto");
 	if(frame != NULL){
 		frame->packet = tr_packet;
-		frame->sent = 0;
+		frame->sent = 1;
 		frame->ack = 0;
 		frame->timeout = 0;
 		gettimeofday(&frame->timesent_tv,NULL);
@@ -102,17 +105,55 @@ unsigned short send_packet(struct WindowFrame* frame, char* input, unsigned shor
 }
 
 void retransmit(struct WindowFrame* frame){
-	char buf[MAX_PACKET_LENGTH];
+	/*char buf[MAX_PACKET_LENGTH];
 	memset(buf, 0, MAX_PACKET_LENGTH);
-	memcpy(buf,(void*) &frame->packet, MAX_PACKET_LENGTH);
+	memcpy(buf,(void*) &frame->packet, MAX_PACKET_LENGTH);*/
 	
 	printf("Sending packet %d %d", frame->packet.ack_num, WINDOW_SIZE_BYTES);
 	if(SYN & frame->packet.flags) printf(" SYN");
 	else if(FIN & frame->packet.flags) printf(" FIN");
 	printf(" Retransmission\n");
 	
-	if(sendto(sockfd,buf, frame->packet.length + sizeof(frame->packet), 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
+	if(sendto(sockfd, &(frame->packet), frame->packet.length + sizeof(frame->packet), 0, (struct sockaddr *)&serv_addr,addrlen) < 0)
 		error("ERROR in sendto");
+	gettimeofday(&(frame->timesent_tv),NULL);
+}
+
+void empty_window(){
+	global_timeout = 0;
+	window1.sent = 0;
+	window1.ack = 0;
+}
+
+int timeout_remaining(struct timeval timesent_tv){
+	struct timeval current_time_tv;
+	gettimeofday(&current_time_tv,NULL);
+	int elapsed_msec = (current_time_tv.tv_sec - timesent_tv.tv_sec)*1000
+				+ (current_time_tv.tv_usec - timesent_tv.tv_usec)/1000;
+	return (500-elapsed_msec);
+}
+
+// TIMEOUT logic
+// go thru the window calculate the shortest timeout 
+void refresh_timeout(){
+	global_timeout = 0;
+	int shortest_TO_msec = 501;
+	int timeleft;
+	if(window1.sent == 1 && window1.ack == 0){//For all awaiting a return
+		timeleft = timeout_remaining(window1.timesent_tv);
+		if (timeleft < shortest_TO_msec)
+			shortest_TO_msec = timeleft;
+	}
+	if(shortest_TO_msec < 501) global_timeout = shortest_TO_msec;
+	// printf("seq: %d, elapsed_msec: %d\n", window[to_iter].packet.seq_num, elapsed_msec);
+}
+
+//Handles resending
+void check_timeout(){
+	if(window1.sent == 1 && window1.ack == 0){//For all awaiting a return
+		if (timeout_remaining(window1.timesent_tv) <= 0) retransmit(&window1);
+	}
+	refresh_timeout();
 }
 
 //Primary event loop
@@ -144,7 +185,7 @@ void respond(){
 		for(i = 0; i < fragments; i++) fragment_track[i] = 0;
 		fragbegin = rcv_packet.seq_num  + recvlen;
 		//Respond
-		send_packet(NULL, NULL, 0, 0, fragbegin, 1,0,0,0);
+		send_packet(&window1, NULL, 0, 0, fragbegin, 1,0,0,0);
 		
 	} else {
 		//Received FIN - close connection
@@ -166,12 +207,15 @@ void respond(){
 			}
 			if(fragments == 0){
 				write(rcv_data,filebuf,filesize);
-				send_packet(NULL, NULL, 0, 0, rcv_packet.seq_num + recvlen, 0,1,0,0);
+				send_packet(&window1, NULL, 0, 0, rcv_packet.seq_num + recvlen, 0,1,0,0);
 			} else {
+				empty_window();//Only relevant for first frag - since before that it awaits first frag
 				send_packet(NULL, NULL, 0, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
 			}
 		}
 	}
+	
+	refresh_timeout();
 }
 
 int main(int argc, char *argv[])
@@ -202,12 +246,15 @@ int main(int argc, char *argv[])
     serv_addr.sin_port = htons(portno);
 	addrlen = sizeof(serv_addr);
 	
-	send_packet(NULL, argv[3], strlen(argv[3]), 0, 0, 0, 0, 0, 1);
+	send_packet(&window1, argv[3], strlen(argv[3]), 0, 0, 0, 0, 0, 1);
+	refresh_timeout();
 	fragments = -1;
 
-
 	while(1){
-	respond();
+		respond();
+		if (global_timeout < 0) {//Something timed out. Handle resending
+			check_timeout();
+		}
 	}
     return 0;
 }

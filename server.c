@@ -52,6 +52,7 @@ struct Packet {
     char payload[MAX_PAYLOAD_LENGTH];
 };
 
+int global_timeout;
 struct WindowFrame {
 	struct Packet packet;
 	int sent;
@@ -95,7 +96,7 @@ unsigned short send_packet(struct WindowFrame* frame, char* input, unsigned shor
 	
 	if(frame != NULL){
 		frame->packet = tr_packet;
-		frame->sent = 0;
+		frame->sent = 1;
 		frame->ack = 0;
 		frame->timeout = 0;
 		gettimeofday(&(frame->timesent_tv),NULL);
@@ -105,17 +106,18 @@ unsigned short send_packet(struct WindowFrame* frame, char* input, unsigned shor
 }
 
 void retransmit(struct WindowFrame* frame){
-	char buf[MAX_PACKET_LENGTH];
+	/*char buf[MAX_PACKET_LENGTH];
 	memset(buf, 0, MAX_PACKET_LENGTH);
-	memcpy(buf,(void*) &frame->packet, MAX_PACKET_LENGTH);
+	memcpy(buf,(void*) &frame->packet, MAX_PACKET_LENGTH);*/
 	
 	printf("Sending packet %d %d", frame->packet.seq_num, WINDOW_SIZE_BYTES);
 	if(SYN & frame->packet.flags) printf(" SYN");
 	else if(FIN & frame->packet.flags) printf(" FIN");
 	printf(" Retransmission\n");
 	
-	if(sendto(sockfd,buf, frame->packet.length + sizeof(frame->packet), 0, (struct sockaddr *)&cli_addr,cli_addrlen) < 0)
+	if(sendto(sockfd, &(frame->packet), frame->packet.length + sizeof(frame->packet), 0, (struct sockaddr *)&cli_addr,cli_addrlen) < 0)
 		error("ERROR in sendto");
+	gettimeofday(&(frame->timesent_tv),NULL);
 }
 
 void init_file_transfer(){
@@ -156,11 +158,11 @@ void file_transfer(unsigned short acknum){
 	char buf[MAX_PAYLOAD_LENGTH];
 	i = 0; //Frame we are checking
 	int j = -1; //This iterator searches for the next un-ACKed frame
-	int test = 0;
+	/*int test = 0;
 	for (; test < 5; test = test +1 ) {
 		printf("frame %d seq: %d\n", test, window[test].packet.seq_num);
-	}
-	printf("process\n");
+	}*/
+	//printf("process\n");
 	while(i < 4) {
 		// 'remove' consecutive acked packets from the beginning of the window array 
 		// shift other frames in array
@@ -179,10 +181,10 @@ void file_transfer(unsigned short acknum){
 			if(j >= 4) break;
 		} else i++;
 	}
-	test = 0;
+	/*test = 0;
 	for (; test < 5; test = test +1 ) {
 		printf("frame %d seq: %d\n", test, window[test].packet.seq_num);
-	}
+	}*/
 	if(j != -1){//j is set => repopulate window, starting from i
 		while(i < 4){
 			int r = read(fd,buf,MAX_PAYLOAD_LENGTH);
@@ -192,11 +194,57 @@ void file_transfer(unsigned short acknum){
 			else{ 
 				send_packet(&window[i], buf, sizeof(buf), global_seq, 0, 0, 0, 1, 0);
 				global_seq = global_seq + MAX_PACKET_LENGTH;
-				num_frames = num_frames + 1;
+				//num_frames = num_frames + 1;
 			}
 			i++;
 		}
 	}
+}
+
+void empty_window(){
+	global_timeout = 0;
+	int i;
+	for(i = 0; i < 5; i++){
+		window[i].sent = 0;
+		window[i].ack = 0;
+	}
+}
+
+int timeout_remaining(struct timeval timesent_tv){
+	struct timeval current_time_tv;
+	gettimeofday(&current_time_tv,NULL);
+	int elapsed_msec = (current_time_tv.tv_sec - timesent_tv.tv_sec)*1000
+				+ (current_time_tv.tv_usec - timesent_tv.tv_usec)/1000;
+	return (500-elapsed_msec);
+}
+
+// TIMEOUT logic
+// go thru the window calculate the shortest timeout 
+void refresh_timeout(){
+	global_timeout = 0;
+	int i;
+	int shortest_TO_msec = 501;
+	int timeleft;
+	for(i = 0; i < 5; i++){
+		if(window[i].sent == 1 && window[i].ack == 0){//For all awaiting a return
+			timeleft = timeout_remaining(window[i].timesent_tv);
+			if (timeleft < shortest_TO_msec)
+				shortest_TO_msec = timeleft;
+		}
+	}
+	if(shortest_TO_msec < 501) global_timeout = shortest_TO_msec;
+	// printf("seq: %d, elapsed_msec: %d\n", window[to_iter].packet.seq_num, elapsed_msec);
+}
+
+//Handles resending
+void check_timeout(){
+	int i;
+	for(i = 0; i < 5; i++){
+		if(window[i].sent == 1 && window[i].ack == 0){//For all awaiting a return
+			if (timeout_remaining(window[i].timesent_tv) <= 0) retransmit(&window[i]);
+		}
+	}
+	refresh_timeout();
 }
 
 //Primary event loop
@@ -223,12 +271,12 @@ void respond(){
 				}
 				// send file size
 				// may need to add Timeout for this
-				send_packet(NULL, syn_buf, sizeof(syn_buf), global_seq, rcv_packet.seq_num, 1,finish,0,1);
+				send_packet(&window[0], syn_buf, sizeof(syn_buf), global_seq, rcv_packet.seq_num, 1,finish,0,1);
 				global_seq = global_seq+MAX_PACKET_LENGTH;
 				if(finish == 0) stateflag = 1;
 			}
 			if (rcv_packet.flags & FIN) {
-				send_packet(NULL, NULL, 0, global_seq, rcv_packet.seq_num, 0,1,0,0);
+				send_packet(&window[0], NULL, 0, global_seq, rcv_packet.seq_num, 0,1,0,0);
 				close(sockfd);
 				exit(0);
 			}
@@ -243,7 +291,8 @@ void respond(){
 			if (rcv_packet.flags & ACK) {
 				file_transfer(rcv_packet.ack_num);
 			} else if (rcv_packet.flags & FIN) {
-				send_packet(NULL, NULL, 0, global_seq, rcv_packet.seq_num, 0,1,0,0);
+				empty_window();
+				send_packet(&window[0], NULL, 0, global_seq, rcv_packet.seq_num, 0,1,0,0);
 				close(sockfd);
 				exit(0);
 			}
@@ -257,21 +306,7 @@ void respond(){
 	// printf("received message: %d \n%s\n", strlen(payload), payload);
 	// char* buf = "Server Acknowledged";
 	// send_packet(NULL, buf, 2002, 366, 0, 1, 0, 1);
-
-	// TIMEOUT logic
-	// go thru the window calculate the shortest timeout 
-	int to_iter;
-	int shortest_TO_msec = 500;
-	for (to_iter=0; to_iter< num_frames; to_iter++) {
-		struct timeval current_time_tv;
-		gettimeofday(&current_time_tv,NULL);
-		int elapsed_msec = (current_time_tv.tv_sec - window[to_iter].timesent_tv.tv_sec)*1000
-					+ (current_time_tv.tv_usec - window[to_iter].timesent_tv.tv_usec)/1000;
-		if ((RTO - elapsed_msec) < shortest_TO_msec)
-			shortest_TO_msec = RTO - elapsed_msec;
-		// printf("seq: %d, elapsed_msec: %d\n", window[to_iter].packet.seq_num, elapsed_msec);
-	}
-
+	refresh_timeout();
 }
 
 //Sets up socket connection and starts server (based entirely off sample code). 
@@ -302,16 +337,22 @@ int main(int argc, char *argv[])
     struct pollfd fds[] = {
 		{sockfd, POLLIN}
     };
+	
     int r = 0;
+	global_timeout = 0;
+	empty_window();
+	
     while(1){
     	// use poll to detect when data is ready to be read from socket
-    	r = poll(fds,1,0);
+    	r = poll(fds,1,global_timeout);
 		if (r < 0) {
 			// poll error
 			error("error in poll\n");
 		}
 		else if (fds[0].revents & POLLIN) {
 			respond();
+		} else if (global_timeout != 0) {//Something timed out. Handle resending
+			check_timeout();
 		}
     }
 
