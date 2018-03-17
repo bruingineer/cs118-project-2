@@ -8,6 +8,4 @@ Our 'work division' here is based on our chronological commits on Github, which 
 https://github.com/bruingineer/cs118-project-2
 
 Josh: Starts a C++ server prototype.
-Kuan: Converts server to C. Got server working.
-
-Josh: Integrated the god function poll()
+Kuan: Converts server to C. Got ACK server working.
