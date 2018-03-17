@@ -23,6 +23,6 @@ Both: Fixed file transfer for binary files by redoing send_packet.
 
 Josh: Added poll(). Added timestamp interface. Created WindowFrame.  Started window[] array updating. Started timeout functionality based on window[].
 
-Kuan: Completed timeout functionality.
+Kuan: Sorted timeout into functions empty_window, check_timeout and refresh_timeout. Completed timeout functionality.
 
 Josh: Fixed FIN procedure that was starting on client and TIME_WAIT on server.
