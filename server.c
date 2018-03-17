@@ -69,9 +69,9 @@ int get_packet(struct Packet* rcv_packet) {
 	if(recvlen > 0){
 		// if(rcv_packet->ack_num > 0) printf("Receiving packet %d\n", rcv_packet->ack_num);
 		if(rcv_packet->ack_num > 0) {
-			printf("Receiving packet %d", rcv_packet->ack_num);
-			if(rcv_packet->flags & FIN) printf(" FIN\n");
-			else printf("\n");
+			printf("Receiving packet %d\n", rcv_packet->ack_num);
+			//if(rcv_packet->flags & FIN) printf(" FIN\n");
+			//else printf("\n");
 		}
 		return 1;
 	}

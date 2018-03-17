@@ -66,9 +66,9 @@ struct WindowFrame window1;
 int get_packet(struct Packet* rcv_packet) {
 	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &serv_addr, &addrlen);
 	if(recvlen > 0){
-		printf("Receiving packet %d", rcv_packet->seq_num);
-		if(rcv_packet->flags & FIN) printf(" FIN\n");
-		else printf("\n");
+		printf("Receiving packet %d\n", rcv_packet->seq_num);
+		//if(rcv_packet->flags & FIN) printf(" FIN\n");
+		//else printf("\n");
 		return recvlen;
 	}
 	return 0;
