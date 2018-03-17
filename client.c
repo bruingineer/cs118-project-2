@@ -196,7 +196,7 @@ void respond(){
 		//Received FIN - reply FINACK
 		// if (rcv_packet.flags & FIN && rcv_packet.flags & ACK) {
 		if (rcv_packet.flags & FIN) {	
-			if(window1.sent) retransmit(&window2);
+			if(window2.sent) retransmit(&window2);
 			else send_packet(&window2, NULL, 0, 0, rcv_packet.seq_num  + recvlen, 1,1,0,0);
 			global_timeout = RTO*2;
 			stateflag = 3;
