@@ -92,7 +92,7 @@ unsigned short send_packet(struct WindowFrame* frame, char* input, unsigned shor
 	else {
 		printf("Sending packet %d", acknum);
 		if(finflag) printf(" FIN");
-		if ( (fragment_track[((acknum - fragbegin)/MAX_PACKET_LENGTH)]) == 1) {
+		if ( (fragment_track[((seq - fragbegin)/MAX_PACKET_LENGTH)]) == 1) {
 			printf(" Retransmission");
 		}
 	}
@@ -207,7 +207,7 @@ void respond(){
 			int index = (rcv_packet.seq_num - fragbegin)/MAX_PACKET_LENGTH;
 			if(fragment_track[index] == 0){
 				memcpy(filebuf+index*MAX_PAYLOAD_LENGTH,rcv_packet.payload,rcv_packet.length);
-				fragment_track[index] = 1;
+				// fragment_track[index] = 1;
 				fragments--;
 			}
 
@@ -225,11 +225,12 @@ void respond(){
 					stateflag = 1;
 				}
 				// send_packet(&window1, NULL, 0, 0, rcv_packet.seq_num + recvlen, 0,1,0,0);
-				send_packet(NULL, NULL, 0, 0, rcv_packet.seq_num + recvlen, 1,0,0,0);
+				send_packet(NULL, NULL, 0, rcv_packet.seq_num, rcv_packet.seq_num + recvlen, 1,0,0,0);
 			} else {
 				empty_window();//Only relevant for first frag - since before that it awaits first frag
-				send_packet(NULL, NULL, 0, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
+				send_packet(NULL, NULL, 0, rcv_packet.seq_num, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
 			}
+			fragment_track[index] = 1;
 		}
 	}
 }
