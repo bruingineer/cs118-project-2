@@ -62,6 +62,7 @@ struct WindowFrame {
 };
 //Client only has at most 1 packet awaiting to be ACKed
 struct WindowFrame window1;
+struct WindowFrame window2;
 
 int get_packet(struct Packet* rcv_packet) {
 	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &serv_addr, &addrlen);
@@ -91,7 +92,7 @@ unsigned short send_packet(struct WindowFrame* frame, char* input, unsigned shor
 	else {
 		printf("Sending packet %d", acknum);
 		if(finflag) printf(" FIN");
-		else if ( fragment_track[(seq - fragbegin)/MAX_PACKET_LENGTH] == 1) {
+		if ( (fragment_track[((acknum - fragbegin)/MAX_PACKET_LENGTH)]) == 1) {
 			printf(" Retransmission");
 		}
 	}
@@ -195,8 +196,8 @@ void respond(){
 		//Received FIN - reply FINACK
 		// if (rcv_packet.flags & FIN && rcv_packet.flags & ACK) {
 		if (rcv_packet.flags & FIN) {	
-			if(window1.sent) retransmit(&window1);
-			else send_packet(&window1, NULL, 0, 0, rcv_packet.seq_num  + recvlen, 1,1,0,0);
+			if(window1.sent) retransmit(&window2);
+			else send_packet(&window2, NULL, 0, 0, rcv_packet.seq_num  + recvlen, 1,1,0,0);
 			global_timeout = RTO*2;
 			stateflag = 3;
 		}
