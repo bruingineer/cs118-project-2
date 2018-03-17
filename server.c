@@ -15,6 +15,7 @@
 #include <sys/time.h>
 #include <signal.h>  /* signal name macros, and the kill() prototype */
 
+#define DEBUG 0
 #define MAX_PACKET_LENGTH 1024 // 1024 bytes, inluding all headers
 #define MAX_PAYLOAD_LENGTH 1016 // 1024 - 8
 #define HEADER_LENGTH 8
@@ -40,7 +41,8 @@ socklen_t addrlen = sizeof(serv_addr);
 socklen_t cli_addrlen = sizeof(cli_addr);
 int global_seq = 20000;
 int num_frames = 0;
-
+int fileread = 0;
+int stateflag;
 int fd = -1;
 char filename[256] = {0}; // 255 chars max filename size
 
@@ -65,7 +67,12 @@ struct WindowFrame window[5] = {0};
 int get_packet(struct Packet* rcv_packet) {
 	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &cli_addr, &cli_addrlen);
 	if(recvlen > 0){
-		if(rcv_packet->ack_num > 0) printf("Receiving packet %d\n", rcv_packet->ack_num);
+		// if(rcv_packet->ack_num > 0) printf("Receiving packet %d\n", rcv_packet->ack_num);
+		if(rcv_packet->ack_num > 0) {
+			printf("Receiving packet %d", rcv_packet->ack_num);
+			if(rcv_packet->flags & FIN) printf(" FIN\n");
+			else printf("\n");
+		}
 		return 1;
 	}
 	return 0;
@@ -120,30 +127,73 @@ void init_file_transfer(){
 		// reads next part of file and puts it in window
 		int r = read(fd,buf,MAX_PAYLOAD_LENGTH);
 		if (r == 0) {
+			fileread = 1;
 			break; //File is completely transmitted!
 		}
 		else{ 
 			send_packet(&window[i], buf, sizeof(buf), global_seq, 0, 0, 0, 1, 0);
 			global_seq = global_seq + MAX_PACKET_LENGTH;
-			num_frames = num_frames + 1;
+			// num_frames = num_frames + 1;
 		}
 		// once window is full, break
 	}
+}
+
+// returns 1 if all frames in window are acked, 0 otherwise
+int check_final_acks() {
+	int i;
+	for(i = 0; i < 5; i++){
+		if(window[i].ack == 0){
+			return 0;
+		}
+	}
+	return 1;
 }
 
 void file_transfer(unsigned short acknum){
 	// process window here
 	// check if any packets can be saved in order and move the window up
 	// then fill window with next payloads from next_file_window_frame
+	if (stateflag == 1) {
+		int i;
+		char buf[MAX_PAYLOAD_LENGTH];
+		for(i=0; i < 5; i=i+1) {
+			// reads next part of file and puts it in window
+			int r = read(fd,buf,MAX_PAYLOAD_LENGTH);
+			if (r == 0) {
+				fileread = 1;
+				for (; i<5;i++)
+					window[i].ack = 1;
+				break; //File is completely buffered!
+			}
+			else{ 
+				send_packet(&window[i], buf, sizeof(buf), global_seq, 0, 0, 0, 1, 0);
+				global_seq = global_seq + MAX_PACKET_LENGTH;
+				// num_frames = num_frames + 1;
+			}
+			// once window is full, break
+		}
+		return;
+	}
+
 	int i;
-	for(i = 0; i < 4; i++){
+	for(i = 0; i < 5; i++){
 		if(acknum == window[i].packet.seq_num + MAX_PACKET_LENGTH){
 			window[i].ack = 1;
 			break;
 		}
 	}
-	if(i == 5) return;//Probably repeated ACK
 	
+	if (DEBUG) {
+		for(i = 0; i < 5; i++){
+			printf("acknum: %d, ",acknum);
+			printf("i.seq+PacketLen: %d =?= ", window[i].packet.seq_num + MAX_PACKET_LENGTH);
+			printf("i.ack: %d\n", window[i].ack);
+		}
+	}
+	if(i == 5) return;//Probably repeated ACK
+	if(fileread) return; // only need to store ACKs if whole file has been read
+
 	char buf[MAX_PAYLOAD_LENGTH];
 	i = 0; //Frame we are checking
 	int j = -1; //This iterator searches for the next un-ACKed frame
@@ -169,9 +219,11 @@ void file_transfer(unsigned short acknum){
 		while(i < 5){
 			int r = read(fd,buf,MAX_PAYLOAD_LENGTH);
 			if (r == 0) {//File is completely transmitted!
+				// acks the non used window frames if any are left
 				for(; i < 5; i++){
 					window[i].ack = 1;
 				}
+				fileread = 1;
 				break; 
 			}
 			else{ 
@@ -235,9 +287,10 @@ void check_timeout(){
 }
 
 //Primary event loop
-int stateflag;
+// moved stateflag to top
 struct Packet rcv_packet;
 void respond(){
+	if(DEBUG) printf("enter respond with state %d\n", stateflag);
 	get_packet(&rcv_packet);
 		
 	switch(stateflag){
@@ -262,29 +315,52 @@ void respond(){
 				global_seq = global_seq+MAX_PACKET_LENGTH;
 				if(finish == 0) stateflag = 1;
 			}
-			if (rcv_packet.flags & FIN) {
+			if (rcv_packet.flags & FIN && rcv_packet.flags & ACK) {
 				close(fd);
-				empty_window();
-				send_packet(&window[0], NULL, 0, global_seq, rcv_packet.seq_num, 1,1,0,0);
-				stateflag = 3;
+				// empty_window();
+				// send_packet(&window[0], NULL, 0, global_seq, rcv_packet.seq_num, 1,1,0,0);
+				// stateflag = 3;
+				close(sockfd);
+				exit(0);
 			}
 			break;
+		
+			/*
 		case 1://Awaiting client handshake ACK - ensures data is allocated
 			if (rcv_packet.flags & ACK) {
-				init_file_transfer();
-				stateflag = 2;
+				// init_file_transfer();
+				//stateflag = 2;
+				printf("%d, %d", fileread, check_final_acks());
+
+				if (fileread && check_final_acks()) {
+					empty_window();
+					send_packet(&window[0], NULL, 0, global_seq, rcv_packet.seq_num, 0,1,0,0);
+					stateflag = 3;
+				} else stateflag = 2;
 			}
 			break;
+
+			*/
+		case 1:
 		case 2://File transfer
 			if (rcv_packet.flags & ACK) {
 				file_transfer(rcv_packet.ack_num);
-			} else if (rcv_packet.flags & FIN) {
-				empty_window();
-				send_packet(&window[0], NULL, 0, global_seq, rcv_packet.seq_num, 1,1,0,0);
-				stateflag = 3;
-			}
+				if (stateflag == 1) stateflag = 2;
+				if (DEBUG) printf("all acked: %d\n", check_final_acks());
+				if (fileread && check_final_acks()) {
+					empty_window();
+					send_packet(&window[0], NULL, 0, global_seq, rcv_packet.seq_num, 0,1,0,0);
+					stateflag = 3;
+				}
+			} 
+			// else if (rcv_packet.flags & FIN) {
+			// 	// sever should send FIN when everything has been acked
+			// 	empty_window();
+			// 	send_packet(&window[0], NULL, 0, global_seq, rcv_packet.seq_num, 1,1,0,0);
+			// 	stateflag = 3;
+			// }
 			break;
-		case 3://Await Last ACK
+		case 3: // transfer over, everything acked, Await FIN ACK then close
 			if (rcv_packet.flags & FIN && rcv_packet.flags & ACK) {
 				close(sockfd);
 				exit(0);
@@ -294,6 +370,7 @@ void respond(){
 			break;
 	}
 	refresh_timeout();
+	if (DEBUG) printf("exit respond\n");
 }
 
 //Sets up socket connection and starts server (based entirely off sample code). 

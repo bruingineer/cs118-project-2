@@ -64,7 +64,9 @@ struct WindowFrame window1;
 int get_packet(struct Packet* rcv_packet) {
 	int recvlen = recvfrom(sockfd, rcv_packet, MAX_PACKET_LENGTH, 0, (struct sockaddr*) &serv_addr, &addrlen);
 	if(recvlen > 0){
-		printf("Receiving packet %d\n", rcv_packet->seq_num);
+		printf("Receiving packet %d", rcv_packet->seq_num);
+		if(rcv_packet->flags & FIN) printf(" FIN\n");
+		else printf("\n");
 		return recvlen;
 	}
 	return 0;
@@ -138,9 +140,14 @@ int stateflag; //1 = We have already written to file, FIN. 3 = TIME_WAIT
 void check_timeout(){
 	if(window1.sent == 1 && window1.ack == 0){//For all awaiting a return
 		if (timeout_remaining(window1.timesent_tv) <= 0) {
-			retransmit(&window1);
-			if(stateflag == 3) global_timeout = RTO*2;
+			if(stateflag == 3) {
+				// global_timeout = RTO*2;
+				close(sockfd);
+				exit(1);
+			}
 			else global_timeout = RTO;
+			retransmit(&window1);
+
 		}
 	}
 }
@@ -160,8 +167,9 @@ void respond(){
 		// only send syn ack then break
 		if (rcv_packet.flags & FIN) {
 			printf("404 file not found\n");
-			send_packet(&window1, NULL, 0, 0, rcv_packet.seq_num + recvlen, 0,1,0,0);
-			stateflag = 1;
+			send_packet(&window1, NULL, 0, 0, rcv_packet.seq_num + recvlen, 1,1,0,0);
+			global_timeout = 2*RTO;
+			stateflag = 3;
 			return;
 		}
 		
@@ -180,12 +188,16 @@ void respond(){
 		
 	} else {
 		//Received FIN - reply FINACK
-		if (rcv_packet.flags & FIN && rcv_packet.flags & ACK) {
-			send_packet(&window1, NULL, 0, 0, fragbegin, 1,1,0,0);
+		// if (rcv_packet.flags & FIN && rcv_packet.flags & ACK) {
+		if (rcv_packet.flags & FIN) {	
+			if(window1.sent) retransmit(&window1);
+			else send_packet(&window1, NULL, 0, 0, rcv_packet.seq_num  + recvlen, 1,1,0,0);
 			global_timeout = RTO*2;
+			stateflag = 3;
 		}
 		//Receive file fragment
 		if (rcv_packet.flags & FRAG) {
+			empty_window();
 			int index = (rcv_packet.seq_num - fragbegin)/MAX_PACKET_LENGTH;
 			if(fragment_track[index] == 0){
 				memcpy(filebuf+index*MAX_PAYLOAD_LENGTH,rcv_packet.payload,rcv_packet.length);
@@ -206,7 +218,8 @@ void respond(){
 					close(rcv_data);
 					stateflag = 1;
 				}
-				send_packet(&window1, NULL, 0, 0, rcv_packet.seq_num + recvlen, 0,1,0,0);
+				// send_packet(&window1, NULL, 0, 0, rcv_packet.seq_num + recvlen, 0,1,0,0);
+				send_packet(NULL, NULL, 0, 0, rcv_packet.seq_num + recvlen, 1,0,0,0);
 			} else {
 				empty_window();//Only relevant for first frag - since before that it awaits first frag
 				send_packet(NULL, NULL, 0, 0, rcv_packet.seq_num + MAX_PACKET_LENGTH, 1,0,0,0);
