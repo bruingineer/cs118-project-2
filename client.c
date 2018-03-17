@@ -42,6 +42,8 @@ socklen_t addrlen;
 // sequence # doesn't matter in client
 int rcv_data; // fd receive file
 char* filebuf;
+int* fragment_track;
+int fragbegin;
 
 struct Packet {
     unsigned short seq_num;
@@ -89,6 +91,9 @@ unsigned short send_packet(struct WindowFrame* frame, char* input, unsigned shor
 	else {
 		printf("Sending packet %d", acknum);
 		if(finflag) printf(" FIN");
+		else if ( fragment_track[(seq - fragbegin)/MAX_PACKET_LENGTH] == 1) {
+			printf(" Retransmission");
+		}
 	}
 	printf("\n");
 	
@@ -155,8 +160,8 @@ void check_timeout(){
 //Primary event loop
 
 int fragments;
-int* fragment_track;
-int fragbegin;
+// int* fragment_track; moved to top
+// int fragbegin; moved to top
 long int filesize;
 struct Packet rcv_packet;
 void respond(){
