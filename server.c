@@ -120,7 +120,7 @@ void retransmit(struct WindowFrame* frame){
 	gettimeofday(&(frame->timesent_tv),NULL);
 }
 
-void init_file_transfer(){
+/*void init_file_transfer(){
 	int i;
 	char buf[MAX_PAYLOAD_LENGTH];
 	for(i=0; i < 5; i=i+1) {
@@ -137,7 +137,7 @@ void init_file_transfer(){
 		}
 		// once window is full, break
 	}
-}
+}*/
 
 // returns 1 if all frames in window are acked, 0 otherwise
 int check_final_acks() {
@@ -197,23 +197,25 @@ void file_transfer(unsigned short acknum){
 	char buf[MAX_PAYLOAD_LENGTH];
 	i = 0; //Frame we are checking
 	int j = -1; //This iterator searches for the next un-ACKed frame
-	while(i < 4) {
-		// 'remove' consecutive acked packets from the beginning of the window array 
-		// shift other frames in array
-		// yes i know this would be 'better' implemented as a queue with pointers
-		// where elements don't have to be shifted in an array
-		if (window[i].ack) {
-			j = i + 1;//Start this iterator
-			while(j < 5){
-				if(!window[j].ack){
-					window[i] = window[j];
-					i++;
-					j++;
+	if (window[i].ack) {
+		while(i < 4) {
+			// 'remove' consecutive acked packets from the beginning of the window array 
+			// shift other frames in array
+			// yes i know this would be 'better' implemented as a queue with pointers
+			// where elements don't have to be shifted in an array
+			if (window[i].ack) {
+				j = i + 1;//Start this iterator
+				while(j < 5){
+					if(!window[j].ack){
+						window[i] = window[j];
+						i++;
+						j++;
+					}
+					else j++;
 				}
-				else j++;
-			}
-			break;
-		} else i++;
+				break;
+			} else i++;
+		}
 	}
 	if(j != -1){//j is set => repopulate window, starting from i
 		while(i < 5){
@@ -353,12 +355,6 @@ void respond(){
 					stateflag = 3;
 				}
 			} 
-			// else if (rcv_packet.flags & FIN) {
-			// 	// sever should send FIN when everything has been acked
-			// 	empty_window();
-			// 	send_packet(&window[0], NULL, 0, global_seq, rcv_packet.seq_num, 1,1,0,0);
-			// 	stateflag = 3;
-			// }
 			break;
 		case 3: // transfer over, everything acked, Await FIN ACK then close
 			if (rcv_packet.flags & FIN && rcv_packet.flags & ACK) {
